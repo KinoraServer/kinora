@@ -124,6 +124,20 @@ command, `cargo insta review` shows the diff.
 After cloning, run `pnpm install` in the repo root once. That sets up a git hook that formats staged web files with
 Prettier and checks `cargo fmt` and `cargo clippy` when Rust files change. `pnpm format` formats everything.
 
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org), checked by a `commit-msg` hook
+and in CI for every pull request:
+
+```text
+feat(web): add a library icon picker
+fix(server): stop transcodes when the client disconnects
+chore(deps): bump vite to 7.1
+```
+
+The type is one of `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` or `revert`. The
+scope is optional; use a crate name (`core`, `server`, `plugin-api`), `web`, or an area like `docker`, `docs`, `ci` or
+`deps`. Add `!` after the scope for a breaking change. Run `pnpm lint:commits` to check your branch, and
+`git commit --no-verify` to skip the hook once.
+
 ## License
 
 Kinora is released under the [GNU General Public License, version 2](LICENSE),
