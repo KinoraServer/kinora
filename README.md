@@ -107,3 +107,8 @@ Most behaviour lives in `crates/core` as plain functions, so it's tested
 without FFmpeg, files or a network. The ffmpeg commands for every GPU backend
 are snapshot-tested in `crates/core/src/snapshots/`: if a change alters a
 command, `cargo insta review` shows the diff.
+
+## Contributing
+
+After cloning, run `pnpm install` in the repo root once. That sets up a git hook that formats staged web files with
+Prettier and checks `cargo fmt` and `cargo clippy` when Rust files change. `pnpm format` formats everything.

@@ -53,7 +53,8 @@ export function detectCaps(can: Probe, highDynamicRangeScreen: boolean): ClientC
     max_audio_channels: 6,
     hdr10: highDynamicRangeScreen && hevc,
     hlg: highDynamicRangeScreen && hevc,
-    dolby_vision: highDynamicRangeScreen && (can('video/mp4; codecs="dvh1.05.06"') || can('video/mp4; codecs="dvh1.08.06"')),
+    dolby_vision:
+      highDynamicRangeScreen && (can('video/mp4; codecs="dvh1.05.06"') || can('video/mp4; codecs="dvh1.08.06"')),
   };
 }
 

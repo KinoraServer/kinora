@@ -46,7 +46,11 @@ export function ItemPage() {
       {/* Backdrop */}
       <div className="relative -mx-4 h-[42vh] min-h-72 overflow-hidden sm:-mx-8">
         {item.has_backdrop && (
-          <img src={imageUrl(item.id, "backdrop")} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
+          <img
+            src={imageUrl(item.id, "backdrop")}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover opacity-60"
+          />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-background/90 to-transparent" />
@@ -73,18 +77,25 @@ export function ItemPage() {
         />
         <div className="min-w-0 flex-1 space-y-4 pt-4 md:pt-24">
           {heading && (
-            <Link to={`/item/${item.series_id}`} className="cursor-pointer text-sm font-medium text-primary hover:underline">
+            <Link
+              to={`/item/${item.series_id}`}
+              className="cursor-pointer text-sm font-medium text-primary hover:underline"
+            >
               {heading}
             </Link>
           )}
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-            {item.kind === "episode" && <span className="text-muted-foreground">{episodeCode(item.season_number, item.episode_number)} · </span>}
+            {item.kind === "episode" && (
+              <span className="text-muted-foreground">{episodeCode(item.season_number, item.episode_number)} · </span>
+            )}
             {item.title}
           </h1>
           {item.tagline && <p className="text-muted-foreground italic">{item.tagline}</p>}
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             {item.year && <span>{item.year}</span>}
-            {(item.runtime_minutes || duration) && <span>{formatDuration((item.runtime_minutes ?? 0) * 60000 || duration)}</span>}
+            {(item.runtime_minutes || duration) && (
+              <span>{formatDuration((item.runtime_minutes ?? 0) * 60000 || duration)}</span>
+            )}
             {item.rating && (
               <span className="flex items-center gap-1">
                 <Star className="h-3.5 w-3.5 fill-current text-primary" /> {item.rating.toFixed(1)}

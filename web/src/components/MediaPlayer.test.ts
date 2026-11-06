@@ -3,7 +3,9 @@ import { resolvePlayerStyle, sanitizeSkinHtml, scopeSkinCss } from "./MediaPlaye
 
 describe("sanitizeSkinHtml", () => {
   it("keeps wiring attributes and plain markup", () => {
-    const out = sanitizeSkinHtml('<div class="a"><button data-kn-action="play">Go</button><span data-kn-text="time"></span></div>');
+    const out = sanitizeSkinHtml(
+      '<div class="a"><button data-kn-action="play">Go</button><span data-kn-text="time"></span></div>',
+    );
     expect(out).toContain('data-kn-action="play"');
     expect(out).toContain('data-kn-text="time"');
     expect(out).toContain('class="a"');

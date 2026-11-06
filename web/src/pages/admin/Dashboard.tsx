@@ -56,9 +56,16 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="Active streams" description="Direct play streams don't use the transcoder and aren't listed here." />
+        <CardHeader
+          title="Active streams"
+          description="Direct play streams don't use the transcoder and aren't listed here."
+        />
         <div className="divide-y">
-          {sessions.data?.length === 0 && <div className="p-5"><Empty title="Nothing is transcoding right now" /></div>}
+          {sessions.data?.length === 0 && (
+            <div className="p-5">
+              <Empty title="Nothing is transcoding right now" />
+            </div>
+          )}
           {sessions.data?.map((s) => (
             <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 p-5 text-sm">
               <div>

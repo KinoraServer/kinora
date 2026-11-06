@@ -15,7 +15,8 @@ interface FolderList {
 export function FolderPicker({ onPick }: { onPick: (path: string) => void }) {
   const [path, setPath] = useState("");
   const { data, error, loading } = useApi<FolderList>(`api/fs/folders?path=${encodeURIComponent(path)}`);
-  const join = (base: string, name: string) => (base.endsWith("/") || base.endsWith("\\") ? base + name : `${base}/${name}`);
+  const join = (base: string, name: string) =>
+    base.endsWith("/") || base.endsWith("\\") ? base + name : `${base}/${name}`;
 
   return (
     <div className="space-y-2">

@@ -112,7 +112,9 @@ function UserMenu({ username, onLogout }: { username: string; onLogout: () => vo
             >
               <span
                 className="h-4 w-4 rounded-full border"
-                style={{ background: `linear-gradient(135deg, ${t.tokens.background ?? "#000"} 50%, ${t.tokens.primary ?? "#888"} 50%)` }}
+                style={{
+                  background: `linear-gradient(135deg, ${t.tokens.background ?? "#000"} 50%, ${t.tokens.primary ?? "#888"} 50%)`,
+                }}
               />
               {t.name}
             </button>

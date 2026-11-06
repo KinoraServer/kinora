@@ -103,7 +103,13 @@ function AddUserDialog(props: { open: boolean; canMakeAdmin: boolean; onClose: (
           <Input value={username} onChange={(e) => setUsername(e.target.value)} required />
         </Field>
         <Field label="Password" help="At least 8 characters. They can change it later.">
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            required
+          />
         </Field>
         <Field label="Role" help={ROLE_HELP[role]}>
           <Select value={role} onChange={(e) => setRole(e.target.value as Role)}>

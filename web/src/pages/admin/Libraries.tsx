@@ -63,7 +63,9 @@ export function LibrariesPage() {
                   : `${lib.item_count} titles · last scan ${formatDate(lib.last_scan_at)}`}
                 {lib.scan && !lib.scan.running && lib.scan.errors > 0 && ` · ${lib.scan.errors} files couldn't be read`}
               </p>
-              {lib.scan?.last_error && !lib.scan.running && <p className="text-xs text-destructive">{lib.scan.last_error}</p>}
+              {lib.scan?.last_error && !lib.scan.running && (
+                <p className="text-xs text-destructive">{lib.scan.last_error}</p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={() => scan(lib.id)} disabled={lib.scan?.running}>
@@ -128,7 +130,10 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
         <Field label="Folders" help="Pick one or more folders. Sub-folders are included.">
           <div className="mb-2 space-y-1">
             {paths.map((p) => (
-              <div key={p} className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5 font-mono text-xs">
+              <div
+                key={p}
+                className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5 font-mono text-xs"
+              >
                 {p}
                 <button
                   type="button"
