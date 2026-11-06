@@ -16,7 +16,7 @@ export default {
     "scope-enum": [
       1,
       "always",
-      [...crates, "web", "player", "docker", "packaging", "unraid", "docs", "ci", "deps", "hooks", "repo"],
+      [...crates, "web", "player", "docker", "packaging", "unraid", "docs", "ci", "deps", "hooks", "repo", "android"],
     ],
     // Bodies often hold pasted logs or URLs.
     "body-max-line-length": [1, "always", 100],
