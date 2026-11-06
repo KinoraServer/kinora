@@ -136,9 +136,9 @@ async fn themes_are_public_and_include_builtins() {
     let t = app().await;
     let (s, body) = t.call("GET", "/api/themes", None, None).await;
     assert_eq!(s, StatusCode::OK);
-    assert_eq!(body["default_theme"], "midnight");
+    assert_eq!(body["default_theme"], "kinora");
     let ids: Vec<&str> = body["themes"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect();
-    assert!(ids.contains(&"midnight") && ids.contains(&"daylight"));
+    assert!(ids.contains(&"kinora") && ids.contains(&"midnight") && ids.contains(&"daylight"));
 }
 
 #[tokio::test]

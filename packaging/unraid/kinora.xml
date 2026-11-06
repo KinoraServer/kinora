@@ -9,6 +9,7 @@
   <Support>https://github.com/lancealthouse/kinora</Support>
   <Project>https://github.com/lancealthouse/kinora</Project>
   <Overview>Kinora is a lightweight self-hosted media server: scans your movies and TV, fetches artwork from TMDB, and streams to any browser with hardware transcoding (Intel, AMD, NVIDIA). For NVIDIA, install the Nvidia Driver plugin and add --runtime=nvidia to Extra Parameters.</Overview>
+  <Icon>https://raw.githubusercontent.com/LanceAlthouse/kinora/main/packaging/unraid/icon.png</Icon>
   <Category>MediaServer:Video</Category>
   <WebUI>http://[IP]:[PORT:8420]/</WebUI>
   <ExtraParams/>

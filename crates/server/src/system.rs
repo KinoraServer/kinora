@@ -51,7 +51,7 @@ struct GeneralSettings {
 pub async fn load_general(state: &AppState) -> AppResult<(String, String, String, u32)> {
     Ok((
         get_setting(&state.db, "server_name").await?.unwrap_or_else(|| "Kinora".into()),
-        get_setting(&state.db, "default_theme").await?.unwrap_or_else(|| "midnight".into()),
+        get_setting(&state.db, "default_theme").await?.unwrap_or_else(|| "kinora".into()),
         get_setting(&state.db, "hw_accel").await?.unwrap_or_else(|| "auto".into()),
         get_setting(&state.db, "scan_interval_minutes").await?.and_then(|v| v.parse().ok()).unwrap_or(60),
     ))

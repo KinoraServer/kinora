@@ -2,24 +2,24 @@
 
 /*
  * Design tokens. Themes override these at runtime (see src/lib/theme.tsx);
- * the values here are the "Midnight" theme so the first paint looks right.
+ * the values here are the "Kinora" theme so the first paint looks right.
  * Every colour utility (bg-background, text-primary, ...) reads a token, so a
  * theme can restyle the whole app without touching components.
  */
 :root {
-  --kn-background: oklch(0.16 0.01 260);
-  --kn-foreground: oklch(0.97 0 0);
-  --kn-card: oklch(0.21 0.012 260);
-  --kn-card-foreground: oklch(0.97 0 0);
-  --kn-muted: oklch(0.27 0.012 260);
-  --kn-muted-foreground: oklch(0.72 0.01 260);
-  --kn-primary: oklch(0.72 0.16 250);
-  --kn-primary-foreground: oklch(0.15 0.02 250);
-  --kn-accent: oklch(0.3 0.03 260);
-  --kn-accent-foreground: oklch(0.97 0 0);
-  --kn-border: oklch(0.3 0.012 260);
-  --kn-ring: oklch(0.72 0.16 250);
-  --kn-destructive: oklch(0.63 0.21 25);
+  --kn-background: #0b1612;
+  --kn-foreground: #ecf7f1;
+  --kn-card: #13221c;
+  --kn-card-foreground: #ecf7f1;
+  --kn-muted: #1c2e26;
+  --kn-muted-foreground: #8fa79b;
+  --kn-primary: #2bd48f;
+  --kn-primary-foreground: #04140d;
+  --kn-accent: #1a3328;
+  --kn-accent-foreground: #ecf7f1;
+  --kn-border: #22382e;
+  --kn-ring: #2bd48f;
+  --kn-destructive: #f2555a;
   --kn-radius: 0.75rem;
   --kn-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* Video player knobs; a theme's "player.options" can override these. */

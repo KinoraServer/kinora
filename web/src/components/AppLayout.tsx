@@ -1,3 +1,4 @@
+import { Logo } from "@/components/Logo";
 import { Clapperboard, Home, LogOut, Palette, Search, Settings, Tv } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
@@ -23,9 +24,7 @@ export function AppLayout() {
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-3 px-4 sm:px-8">
           <Link to="/" className="mr-2 flex cursor-pointer items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Clapperboard className="h-4 w-4" />
-            </span>
+            <Logo className="h-9 w-9" />
             <span className="hidden sm:inline">{info?.server_name ?? "Kinora"}</span>
           </Link>
           <nav className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-on-dark.svg" />
+    <img src="docs/assets/logo-on-light.svg" alt="Kinora" height="72" />
+  </picture>
+</p>
+
 # Kinora
 
 A lightweight, self-hosted media server. Point it at your movies and TV shows,
