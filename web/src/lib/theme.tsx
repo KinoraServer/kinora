@@ -47,7 +47,7 @@ function readStored(): string | null {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themes, setThemes] = useState<Theme[]>([]);
-  const [serverDefault, setServerDefault] = useState("midnight");
+  const [serverDefault, setServerDefault] = useState("kinora");
   const [choice, setChoice] = useState<string | null>(readStored());
 
   const reload = useCallback(() => {

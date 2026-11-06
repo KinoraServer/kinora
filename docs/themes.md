@@ -1,7 +1,7 @@
 # Making a Kinora theme
 
-A theme is a small JSON file. Kinora ships four (Midnight, OLED Black, Ember,
-Daylight) and loads any extra ones from the `themes` folder inside your config
+A theme is a small JSON file. Kinora ships six (Kinora, Kinora Light, Midnight, OLED Black,
+Ember, Daylight) and loads any extra ones from the `themes` folder inside your config
 directory (`/config/themes` in Docker).
 
 1. Copy `themes/example-ocean.json.sample` to a new file ending in `.json`,
@@ -24,7 +24,7 @@ directory (`/config/themes` in Docker).
 }
 ```
 
-Tokens you leave out fall back to the Midnight theme.
+Tokens you leave out fall back to the Kinora theme.
 
 ## Tokens
 

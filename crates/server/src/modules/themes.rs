@@ -39,6 +39,50 @@ const FONT: &str = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, s
 pub fn builtin_themes() -> Vec<Theme> {
     vec![
         theme(
+            "kinora",
+            "Kinora",
+            "dark",
+            &[
+                ("background", "#0B1612"),
+                ("foreground", "#ECF7F1"),
+                ("card", "#13221C"),
+                ("card-foreground", "#ECF7F1"),
+                ("muted", "#1C2E26"),
+                ("muted-foreground", "#8FA79B"),
+                ("primary", "#2BD48F"),
+                ("primary-foreground", "#04140D"),
+                ("accent", "#1A3328"),
+                ("accent-foreground", "#ECF7F1"),
+                ("border", "#22382E"),
+                ("ring", "#2BD48F"),
+                ("destructive", "#F2555A"),
+                ("radius", "0.75rem"),
+                ("font-sans", FONT),
+            ],
+        ),
+        theme(
+            "kinora-light",
+            "Kinora Light",
+            "light",
+            &[
+                ("background", "#F5FAF7"),
+                ("foreground", "#0B1612"),
+                ("card", "#FFFFFF"),
+                ("card-foreground", "#0B1612"),
+                ("muted", "#E6F0EA"),
+                ("muted-foreground", "#4F685C"),
+                ("primary", "#0A7F50"),
+                ("primary-foreground", "#FFFFFF"),
+                ("accent", "#DDEFE5"),
+                ("accent-foreground", "#0B1612"),
+                ("border", "#D3E3DA"),
+                ("ring", "#0A7F50"),
+                ("destructive", "#C9353A"),
+                ("radius", "0.75rem"),
+                ("font-sans", FONT),
+            ],
+        ),
+        theme(
             "midnight",
             "Midnight",
             "dark",
@@ -174,7 +218,7 @@ pub async fn list(State(state): State<AppState>) -> Json<ThemeList> {
         .ok()
         .flatten()
         .filter(|id| themes.iter().any(|t| &t.id == id))
-        .unwrap_or_else(|| "midnight".into());
+        .unwrap_or_else(|| "kinora".into());
     Json(ThemeList { default_theme, themes })
 }
 

@@ -1,4 +1,4 @@
-import { Clapperboard } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, ErrorNote } from "@/components/ui/card";
@@ -11,9 +11,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm p-8">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Clapperboard className="h-6 w-6" />
-          </span>
+          <Logo className="h-16 w-16" />
           <h1 className="text-xl font-semibold">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
