@@ -16,6 +16,9 @@ pub struct Config {
     pub ffprobe: String,
     /// Optional: seeds the TMDB module's API key on first start.
     pub tmdb_api_key: Option<String>,
+    /// How many files are read with ffprobe at once during a scan, and how many
+    /// TMDB lookups run at once. Slow or spinning disks like 4-8; SSDs can go higher.
+    pub scan_concurrency: usize,
 }
 
 impl Config {
@@ -34,6 +37,10 @@ impl Config {
             ffmpeg: var("KINORA_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
             ffprobe: var("KINORA_FFPROBE").unwrap_or_else(|| "ffprobe".into()),
             tmdb_api_key: var("TMDB_API_KEY"),
+            scan_concurrency: var("KINORA_SCAN_CONCURRENCY")
+                .and_then(|v| v.parse().ok())
+                .map(|n: usize| n.clamp(1, 64))
+                .unwrap_or(8),
         }
     }
 

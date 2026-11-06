@@ -188,8 +188,9 @@ async fn scan_library(state: &AppState, library_id: &str) -> anyhow::Result<(u32
         })
         .await;
 
-    // Probe up to 4 files at once; ffprobe is mostly waiting on disk.
-    let sem = Arc::new(Semaphore::new(4));
+    // ffprobe spends most of its time waiting on the disk, so run several at once.
+    let scan_started = std::time::Instant::now();
+    let sem = Arc::new(Semaphore::new(state.config.scan_concurrency));
     let mut tasks = tokio::task::JoinSet::new();
     for f in changed {
         let sem = sem.clone();
@@ -243,11 +244,18 @@ async fn scan_library(state: &AppState, library_id: &str) -> anyhow::Result<(u32
     }
     remove_orphans(&state.db, library_id).await?;
 
-    state.scans.update(library_id, |s| s.phase = "fetching metadata".into()).await;
+    tracing::info!(
+        library = library_id,
+        files = total,
+        seconds = scan_started.elapsed().as_secs(),
+        "finished reading files"
+    );
+    let metadata_started = std::time::Instant::now();
     if let Err(e) = fetch_metadata(state, library_id).await {
         tracing::warn!(error = %e, "metadata fetch failed");
         state.scans.update(library_id, |s| s.last_error = Some(format!("metadata: {e}"))).await;
     }
+    tracing::info!(library = library_id, seconds = metadata_started.elapsed().as_secs(), "finished fetching metadata");
 
     state
         .scans
@@ -506,8 +514,27 @@ struct PendingItem {
     series_tmdb: Option<String>,
 }
 
+/// Look up one item. Returns `Ok(None)` when the provider has no match.
+async fn lookup(provider: &dyn MetadataProvider, item: &PendingItem) -> anyhow::Result<Option<Metadata>> {
+    Ok(match item.kind.as_str() {
+        "movie" | "series" => {
+            let kind = if item.kind == "movie" { MediaKind::Movie } else { MediaKind::Series };
+            let year = item.year.map(|y| y as u16);
+            match provider.search(kind, &item.title, year).await? {
+                Some(hit) => provider.details(kind, &hit.provider_id).await?.or(Some(hit)),
+                None => None,
+            }
+        }
+        _ => match (&item.series_tmdb, item.season_number, item.episode_number) {
+            (Some(series), Some(s), Some(e)) => provider.episode(series, s as u32, e as u32).await?,
+            _ => None,
+        },
+    })
+}
+
 /// Fill in metadata for items that don't have it yet, using the enabled
 /// metadata provider (TMDB today; any `MetadataProvider` module later).
+/// Lookups run several at a time and progress is shown in the library list.
 pub async fn fetch_metadata(state: &AppState, library_id: &str) -> anyhow::Result<()> {
     if !modules::is_enabled(&state.db, "tmdb").await {
         return Ok(());
@@ -516,10 +543,10 @@ pub async fn fetch_metadata(state: &AppState, library_id: &str) -> anyhow::Resul
     let Some(provider) = Tmdb::from_settings(state.http.clone(), &settings) else {
         return Ok(());
     };
-    let provider: &dyn MetadataProvider = &provider;
+    let provider: Arc<dyn MetadataProvider> = Arc::new(provider);
 
     // Movies and series first, so episodes can use their series' id.
-    for kinds in [vec!["movie", "series"], vec!["episode"]] {
+    for (phase, kinds) in [("fetching titles", vec!["movie", "series"]), ("fetching episodes", vec!["episode"])] {
         let placeholders = kinds.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
             "SELECT i.id, i.kind, i.title, i.year, i.season_number, i.episode_number,
@@ -532,26 +559,47 @@ pub async fn fetch_metadata(state: &AppState, library_id: &str) -> anyhow::Resul
             q = q.bind(*k);
         }
         let pending = q.fetch_all(&state.db).await?;
+        if pending.is_empty() {
+            continue;
+        }
 
+        let total = pending.len() as u32;
+        state
+            .scans
+            .update(library_id, |s| {
+                s.phase = phase.into();
+                s.processed = 0;
+                s.total = total;
+            })
+            .await;
+
+        let sem = Arc::new(Semaphore::new(state.config.scan_concurrency));
+        let mut tasks = tokio::task::JoinSet::new();
         for item in pending {
-            let result = match item.kind.as_str() {
-                "movie" | "series" => {
-                    let kind = if item.kind == "movie" { MediaKind::Movie } else { MediaKind::Series };
-                    let year = item.year.map(|y| y as u16);
-                    match provider.search(kind, &item.title, year).await? {
-                        Some(hit) => provider.details(kind, &hit.provider_id).await?.or(Some(hit)),
-                        None => None,
-                    }
-                }
-                _ => match (&item.series_tmdb, item.season_number, item.episode_number) {
-                    (Some(series), Some(s), Some(e)) => provider.episode(series, s as u32, e as u32).await?,
-                    _ => None,
-                },
-            };
+            let (sem, provider) = (sem.clone(), provider.clone());
+            tasks.spawn(async move {
+                let _permit = sem.acquire_owned().await;
+                let result = lookup(provider.as_ref(), &item).await;
+                (item, result)
+            });
+        }
+
+        while let Some(joined) = tasks.join_next().await {
+            let Ok((item, result)) = joined else { continue };
             match result {
-                Some(m) => apply_metadata(&state.db, &item.id, &m, false).await?,
-                None => mark_unmatched(&state.db, &item.id).await?,
+                Ok(Some(m)) => apply_metadata(&state.db, &item.id, &m, false).await?,
+                Ok(None) => mark_unmatched(&state.db, &item.id).await?,
+                Err(e) if e.to_string().contains("rejected the API key") => {
+                    tasks.abort_all();
+                    return Err(e);
+                }
+                Err(e) => {
+                    // Network hiccup or rate limit: leave it pending so the next scan retries.
+                    tracing::warn!(title = %item.title, error = %e, "metadata lookup failed");
+                    state.scans.update(library_id, |s| s.errors += 1).await;
+                }
             }
+            state.scans.update(library_id, |s| s.processed += 1).await;
         }
     }
     Ok(())

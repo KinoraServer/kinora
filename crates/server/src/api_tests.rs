@@ -25,6 +25,7 @@ async fn app() -> TestApp {
         ffmpeg: "ffmpeg".into(),
         ffprobe: "ffprobe".into(),
         tmdb_api_key: None,
+        scan_concurrency: 2,
     };
     let state = crate::build_state(config).await.unwrap();
     TestApp { app: crate::router(state), _dir: dir }
