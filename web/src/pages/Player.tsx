@@ -6,6 +6,7 @@ import { Badge, Spinner } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { browserCaps } from "@/lib/caps";
 import { episodeCode } from "@/lib/format";
+import { pickSubtitle, readSubtitlePreference, saveSubtitlePreference } from "@/lib/subtitles";
 import { useApi } from "@/lib/session";
 import type { ItemDetail, PlaybackStart } from "@/lib/types";
 
@@ -41,6 +42,7 @@ export function PlayerPage() {
   const [error, setError] = useState<string | null>(null);
   const [audioIndex, setAudioIndex] = useState<number | null>(null);
   const [forceTranscode, setForceTranscode] = useState(false);
+  const [subIndex, setSubIndex] = useState<number | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
   const startAt = useRef(Number(params.get("t") ?? 0));
@@ -86,6 +88,7 @@ export function PlayerPage() {
         if (cancelled) return;
         stopSession();
         setPlayback(p);
+        setSubIndex(pickSubtitle(p.subtitles, readSubtitlePreference()));
         durationRef.current = p.duration_ms;
         sessionRef.current = p.session_id;
         const start = startAt.current;
@@ -118,6 +121,20 @@ export function PlayerPage() {
       cancelled = true;
     };
   }, [file, audioIndex, forceTranscode, stopSession]);
+
+  // Show exactly the chosen subtitle track (or none). Tracks are matched by the id we give each <track>.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const apply = () => {
+      for (const t of Array.from(v.textTracks)) {
+        t.mode = t.id === `sub-${subIndex}` ? "showing" : "disabled";
+      }
+    };
+    apply();
+    v.textTracks.addEventListener("addtrack", apply);
+    return () => v.textTracks.removeEventListener("addtrack", apply);
+  }, [playback, subIndex]);
 
   // Direct play can still fail (e.g. a codec the browser claimed but can't decode): fall back to transcoding.
   useEffect(() => {
@@ -191,9 +208,11 @@ export function PlayerPage() {
         onPause={saveProgress}
         onEnded={onEnded}
       >
-        {playback?.subtitles.map((s) => (
-          <track key={s.index} kind="subtitles" src={s.url} label={s.label} srcLang={s.language ?? undefined} default={s.is_default} />
-        ))}
+        {playback?.subtitles
+          .filter((s) => s.supported)
+          .map((s) => (
+            <track key={s.index} id={`sub-${s.index}`} kind="subtitles" src={s.url} label={s.label} srcLang={s.language ?? undefined} />
+          ))}
       </video>
 
       <div
@@ -221,6 +240,32 @@ export function PlayerPage() {
               {file.info.audio.map((a) => (
                 <option key={a.index} value={a.index} className="text-black">
                   {[a.language?.toUpperCase(), a.title, a.codec, `${a.channels}ch`].filter(Boolean).join(" · ")}
+                </option>
+              ))}
+            </select>
+          )}
+          {playback && playback.subtitles.length > 0 && (
+            <select
+              aria-label="Subtitles"
+              className="h-9 cursor-pointer rounded-md bg-white/10 px-2 text-sm"
+              value={subIndex ?? "off"}
+              onChange={(e) => {
+                const value = e.target.value;
+                const chosen = value === "off" ? null : Number(value);
+                setSubIndex(chosen);
+                const track = playback.subtitles.find((t) => t.index === chosen);
+                saveSubtitlePreference(chosen === null ? "off" : (track?.language ?? "off"));
+              }}
+            >
+              <option value="off" className="text-black">
+                Subtitles: off
+              </option>
+              {playback.subtitles.map((t) => (
+                <option key={t.index} value={t.index} disabled={!t.supported} className="text-black">
+                  {[t.language?.toUpperCase(), t.label !== t.language ? t.label : null, t.is_forced ? "forced" : null]
+                    .filter(Boolean)
+                    .join(" · ") || `Track ${t.index}`}
+                  {t.supported ? "" : " (image subtitles, not supported yet)"}
                 </option>
               ))}
             </select>

@@ -139,12 +139,24 @@ export interface PlaybackPlan {
   audio_index: number | null;
 }
 
+export interface SubtitleTrack {
+  index: number;
+  label: string;
+  language: string | null;
+  url: string;
+  codec: string;
+  is_default: boolean;
+  is_forced: boolean;
+  /** false for image subtitles (PGS, VobSub), which can't be shown in the browser yet. */
+  supported: boolean;
+}
+
 export interface PlaybackStart {
   method: PlaybackPlan["method"];
   url: string;
   session_id: string | null;
   plan: PlaybackPlan;
   duration_ms: number;
-  subtitles: { index: number; label: string; language: string | null; url: string; is_default: boolean }[];
+  subtitles: SubtitleTrack[];
   hardware: string;
 }

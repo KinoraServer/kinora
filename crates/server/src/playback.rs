@@ -71,8 +71,12 @@ struct SubtitleTrack {
     label: String,
     language: Option<String>,
     url: String,
+    codec: String,
     is_default: bool,
     is_forced: bool,
+    /// Text subtitles can be shown in the browser. Image subtitles (PGS, VobSub)
+    /// need to be burned into the video, which isn't built yet, so they're listed but disabled.
+    supported: bool,
 }
 
 #[derive(Serialize)]
@@ -106,14 +110,15 @@ async fn start(
         .info
         .subtitles
         .iter()
-        .filter(|s| s.is_text)
         .map(|s| SubtitleTrack {
             index: s.index,
             label: s.title.clone().or_else(|| s.language.clone()).unwrap_or_else(|| format!("Track {}", s.index)),
             language: s.language.clone(),
             url: format!("api/subtitles/{file_id}/{}", s.index),
+            codec: s.codec.clone(),
             is_default: s.is_default,
             is_forced: s.is_forced,
+            supported: s.is_text,
         })
         .collect();
 
