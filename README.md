@@ -75,6 +75,10 @@ settings. HTTPS is left to the proxy.
 See [docs/plan.md](docs/plan.md) for the roadmap and
 [docs/decisions.md](docs/decisions.md) for the architecture choices.
 
+## Android TV app
+
+A native Android TV client lives in [`clients/android`](clients/android/README.md). It direct-plays whatever your TV can decode (including Dolby Vision and HDR) and falls back to the server's transcoding. The README there explains how to sideload it on an NVIDIA Shield or other Android TV device.
+
 ## Development
 
 You need Rust (stable), Node 22 with pnpm, and FFmpeg on your PATH.

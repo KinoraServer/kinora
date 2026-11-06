@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+# Release signing material never goes in git (see README.md).
+release.keystore
+keystore.properties

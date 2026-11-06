@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; this only sets the window colour while the app starts. -->
+    <style name="Theme.Kinora" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/kinora_background</item>
+        <item name="android:colorBackground">@color/kinora_background</item>
+    </style>
+</resources>
