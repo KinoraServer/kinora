@@ -122,5 +122,6 @@ Prettier and checks `cargo fmt` and `cargo clippy` when Rust files change. `pnpm
 
 ## License
 
-Kinora is released under the [MIT License](LICENSE). FFmpeg is not linked into
-the binary; it runs as a separate program under its own (L)GPL licence.
+Kinora is released under the [GNU General Public License, version 2](LICENSE),
+the same license as the Jellyfin server. FFmpeg is not linked into the binary;
+it runs as a separate program under its own licence.
