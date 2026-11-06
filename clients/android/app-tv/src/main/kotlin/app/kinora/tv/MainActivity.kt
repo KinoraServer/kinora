@@ -1,3 +1,6 @@
+// Media3 marks parts of its API as unstable; this app opts in deliberately.
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package app.kinora.tv
 
 import android.net.Uri
@@ -14,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -54,7 +56,6 @@ private object Routes {
     fun player(id: String, startMs: Long) = "player/$id?start=$startMs"
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun KinoraTvRoot() {
     val container = androidx.compose.ui.platform.LocalContext.current.container
@@ -78,7 +79,6 @@ private fun KinoraTvRoot() {
     }
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun AppNav(nav: NavHostController, start: String) {
     val container = androidx.compose.ui.platform.LocalContext.current.container

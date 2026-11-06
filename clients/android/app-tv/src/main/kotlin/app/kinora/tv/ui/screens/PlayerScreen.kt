@@ -1,3 +1,6 @@
+// Media3 marks parts of its API as unstable; this app opts in deliberately.
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package app.kinora.tv.ui.screens
 
 import android.app.Application
@@ -45,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
@@ -63,7 +65,6 @@ private enum class Menu { None, Audio, Subtitles, Info }
  * Controls shown: the D-pad moves between buttons; on the seek bar left/right seek.
  * Back closes a menu, then the controls, then the player. Media keys always work.
  */
-@UnstableApi
 @Composable
 fun PlayerScreen(itemId: String, startMs: Long, onExit: () -> Unit) {
     val app = LocalContext.current.applicationContext as Application
