@@ -132,6 +132,39 @@ async fn viewers_cannot_do_admin_things() {
 }
 
 #[tokio::test]
+async fn player_style_is_server_wide_and_admin_only() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (_, body) = t.call("GET", "/api/player/style", None, Some(&owner)).await;
+    assert_eq!(body["style"], "theme");
+
+    let (s, _) = t.call("PUT", "/api/player/style", Some(json!({"style": "Bad Id!"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = t.call("PUT", "/api/player/style", Some(json!({"style": "cinematic"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+
+    t.call(
+        "POST",
+        "/api/users",
+        Some(json!({"username": "kid", "password": "password123", "role": "viewer"})),
+        Some(&owner),
+    )
+    .await;
+    let (_, login) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "kid", "password": "password123"})), None).await;
+    let viewer = login["token"].as_str().unwrap().to_string();
+
+    // Every signed-in client reads the same style, but only admins can change it.
+    let (s, body) = t.call("GET", "/api/player/style", None, Some(&viewer)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(body["style"], "cinematic");
+    let (s, _) = t.call("PUT", "/api/player/style", Some(json!({"style": "pro"})), Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("GET", "/api/player/style", None, None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn themes_are_public_and_include_builtins() {
     let t = app().await;
     let (s, body) = t.call("GET", "/api/themes", None, None).await;

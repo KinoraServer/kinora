@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolvePlayerStyle, sanitizeSkinHtml, scopeSkinCss } from "./MediaPlayer";
+import { resolvePlayerStyle } from "../lib/player-styles";
+import { sanitizeSkinHtml, scopeSkinCss } from "./MediaPlayer";
 
 describe("sanitizeSkinHtml", () => {
   it("keeps wiring attributes and plain markup", () => {
@@ -66,8 +67,9 @@ describe("scopeSkinCss", () => {
 });
 
 describe("resolvePlayerStyle", () => {
-  it("uses the theme layout unless the viewer chose one", () => {
+  it("uses the theme layout unless the server picked one", () => {
     expect(resolvePlayerStyle(null, "floating", [])).toBe("floating");
+    expect(resolvePlayerStyle(undefined, "floating", [])).toBe("floating");
     expect(resolvePlayerStyle("theme", "floating", [])).toBe("floating");
     expect(resolvePlayerStyle("pro", "floating", [])).toBe("pro");
   });

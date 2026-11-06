@@ -82,6 +82,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/modules/{id}", put(update))
         .route("/api/themes", get(themes::list))
         .route("/api/player-skins", get(skins::list))
+        .route("/api/player/style", get(skins::get_style).put(skins::put_style))
 }
 
 #[derive(Serialize)]

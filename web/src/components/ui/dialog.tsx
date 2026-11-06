@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useHotkey } from "@tanstack/react-hotkeys";
+import type { ReactNode } from "react";
 
 export function Dialog({
   open,
@@ -12,12 +13,7 @@ export function Dialog({
   title: string;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useHotkey("Escape", onClose, { enabled: open });
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>

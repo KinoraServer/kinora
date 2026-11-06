@@ -10,9 +10,17 @@ use std::path::Path;
 use axum::extract::State;
 use axum::Json;
 use kinora_plugin_api::{ExtensionPoint, ModuleInfo, PlayerSkin};
+use serde::{Deserialize, Serialize};
 
-use crate::auth::AuthUser;
+use crate::auth::{AdminUser, AuthUser};
+use crate::db::{get_setting, set_setting};
+use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+
+/// Settings key for the server-wide player style.
+const STYLE_KEY: &str = "player_style";
+/// "Follow the theme's `player.layout`", the default.
+pub const THEME_STYLE: &str = "theme";
 
 pub const EXAMPLE_JSON: &str = include_str!("skin_example/skin.json");
 pub const EXAMPLE_HTML: &str = include_str!("skin_example/skin.html");
@@ -83,6 +91,36 @@ pub async fn list(State(state): State<AppState>, _user: AuthUser) -> Json<Vec<Pl
         return Json(vec![]);
     }
     Json(load_custom(&state.config.skins_dir()))
+}
+
+/// The player every client uses: "theme", a built-in layout id or a skin id.
+#[derive(Serialize, Deserialize)]
+pub struct PlayerStyle {
+    pub style: String,
+}
+
+/// Ids are checked for shape only. A skin that is missing (removed, or the
+/// module turned off) makes clients fall back to the default layout.
+fn valid_style(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+pub async fn get_style(State(state): State<AppState>, _user: AuthUser) -> AppResult<Json<PlayerStyle>> {
+    let style = get_setting(&state.db, STYLE_KEY).await?.unwrap_or_else(|| THEME_STYLE.into());
+    Ok(Json(PlayerStyle { style }))
+}
+
+pub async fn put_style(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    Json(body): Json<PlayerStyle>,
+) -> AppResult<Json<PlayerStyle>> {
+    let style = body.style.trim().to_string();
+    if !valid_style(&style) {
+        return Err(AppError::BadRequest("player style must be a lowercase id (letters, digits, -)".into()));
+    }
+    set_setting(&state.db, STYLE_KEY, &style).await?;
+    Ok(Json(PlayerStyle { style }))
 }
 
 #[cfg(test)]

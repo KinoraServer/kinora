@@ -1,11 +1,13 @@
-import { Puzzle } from "lucide-react";
-import { useState } from "react";
+import { MonitorPlay, Puzzle } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { BUILTIN_STYLES, type PlayerStyleSetting, THEME_STYLE } from "@/lib/player-styles";
 import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
+import type { PlayerSkin } from "@/lib/types";
 
 interface SettingField {
   key: string;
@@ -36,6 +38,8 @@ export function ModulesPage() {
         <ModuleCard key={m.id} module={m} onChange={reload} />
       ))}
 
+      <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} />
+
       <Card>
         <CardHeader
           title="Themes"
@@ -62,6 +66,86 @@ export function ModulesPage() {
         This product uses the TMDB API but is not endorsed or certified by TMDB.
       </p>
     </div>
+  );
+}
+
+/** The one player layout every client uses, saved on the server. */
+function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
+  const setting = useApi<PlayerStyleSetting>("api/player/style");
+  // Refetch when the skins module is switched on or off so the list matches.
+  const { data: skins } = useApi<PlayerSkin[]>("api/player-skins", [skinsEnabled]);
+  const { themes, current } = useTheme();
+  const [choice, setChoice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const savedStyle = setting.data?.style ?? THEME_STYLE;
+  useEffect(() => setChoice(null), [savedStyle]);
+  const value = choice ?? savedStyle;
+
+  const themeLayout = themes.find((t) => t.id === current)?.player?.layout;
+  const nameOf = (id: string | null | undefined) =>
+    BUILTIN_STYLES.find((s) => s.id === id)?.name ?? skins?.find((s) => s.id === id)?.name ?? "Minimal";
+  const known =
+    value === THEME_STYLE || BUILTIN_STYLES.some((s) => s.id === value) || !!skins?.some((s) => s.id === value);
+
+  const save = async () => {
+    setError(null);
+    try {
+      const next = await api.put<PlayerStyleSetting>("api/player/style", { style: value });
+      setting.setData(next);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Player style"
+        description="The video player every app and browser on this server uses. Pick a built-in style or an installed custom skin."
+      />
+      <div className="space-y-4 p-5">
+        <div className="flex gap-3">
+          <MonitorPlay className="mt-2 h-5 w-5 shrink-0 text-primary" />
+          <div className="w-full max-w-sm">
+            <Select
+              aria-label="Player style"
+              value={value}
+              onChange={(e) => setChoice(e.target.value)}
+              disabled={setting.loading}
+            >
+              <option value={THEME_STYLE}>Follow the theme ({nameOf(themeLayout)})</option>
+              {BUILTIN_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}: {s.description}
+                </option>
+              ))}
+              {skins?.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} (custom skin)
+                </option>
+              ))}
+              {!known && <option value={value}>{value} (not installed, using Minimal)</option>}
+            </Select>
+            {!skinsEnabled && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Turn on Custom player skins above to choose a skin from the player-skins folder.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button size="sm" onClick={save} disabled={value === savedStyle}>
+            Save
+          </Button>
+          {saved && <span className="text-sm text-muted-foreground">Saved. Players use it from the next video.</span>}
+        </div>
+        <ErrorNote message={error} />
+      </div>
+    </Card>
   );
 }
 
