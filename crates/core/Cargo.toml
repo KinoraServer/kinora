@@ -3,6 +3,7 @@ name = "kinora-core"
 description = "Pure media-server logic: no I/O, fully unit-testable."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 serde.workspace = true
