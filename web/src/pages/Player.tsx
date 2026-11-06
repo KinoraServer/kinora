@@ -1,8 +1,7 @@
 import Hls from "hls.js";
-import { ArrowLeft, Info } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { Badge, Spinner } from "@/components/ui/card";
+import { MediaPlayer, type PlayerChoice } from "@/components/MediaPlayer";
 import { api } from "@/lib/api";
 import { browserCaps } from "@/lib/caps";
 import { episodeCode } from "@/lib/format";
@@ -43,8 +42,6 @@ export function PlayerPage() {
   const [audioIndex, setAudioIndex] = useState<number | null>(null);
   const [forceTranscode, setForceTranscode] = useState(false);
   const [subIndex, setSubIndex] = useState<number | null>(null);
-  const [showInfo, setShowInfo] = useState(false);
-  const [chromeVisible, setChromeVisible] = useState(true);
   const startAt = useRef(Number(params.get("t") ?? 0));
 
   const file = item?.files[0];
@@ -169,24 +166,6 @@ export function PlayerPage() {
     };
   }, [saveProgress, stopSession]);
 
-  // Auto-hide the top bar while playing.
-  useEffect(() => {
-    let t: number | undefined;
-    const show = () => {
-      setChromeVisible(true);
-      clearTimeout(t);
-      t = window.setTimeout(() => !videoRef.current?.paused && setChromeVisible(false), 3000);
-    };
-    window.addEventListener("mousemove", show);
-    window.addEventListener("touchstart", show);
-    show();
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener("mousemove", show);
-      window.removeEventListener("touchstart", show);
-    };
-  }, []);
-
   const onEnded = () => {
     saveProgress();
     const next = item?.parent_id ? `/item/${item.parent_id}` : `/item/${id}`;
@@ -198,124 +177,85 @@ export function PlayerPage() {
       ? `${item.series_title ?? ""} · ${episodeCode(item.season_number, item.episode_number)} ${item.title}`
       : (item?.title ?? "");
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black text-white">
-      <video
-        ref={videoRef}
-        className="h-full w-full"
-        controls
-        playsInline
-        onPause={saveProgress}
-        onEnded={onEnded}
-      >
-        {playback?.subtitles
-          .filter((s) => s.supported)
-          .map((s) => (
-            <track key={s.index} id={`sub-${s.index}`} kind="subtitles" src={s.url} label={s.label} srcLang={s.language ?? undefined} />
+  const audio: PlayerChoice | undefined =
+    file?.info && file.info.audio.length > 1
+      ? {
+          options: file.info.audio.map((a) => ({
+            value: String(a.index),
+            label: [a.language?.toUpperCase(), a.title, a.codec, `${a.channels}ch`].filter(Boolean).join(" · "),
+          })),
+          value: String(audioIndex ?? playback?.plan.audio_index ?? ""),
+          onChange: (value) => {
+            startAt.current = videoRef.current?.currentTime ?? 0;
+            setAudioIndex(Number(value));
+          },
+        }
+      : undefined;
+
+  const subtitles: PlayerChoice | undefined =
+    playback && playback.subtitles.length > 0
+      ? {
+          options: [
+            { value: "off", label: "Off" },
+            ...playback.subtitles.map((t) => ({
+              value: String(t.index),
+              label:
+                ([t.language?.toUpperCase(), t.label !== t.language ? t.label : null, t.is_forced ? "forced" : null]
+                  .filter(Boolean)
+                  .join(" · ") || `Track ${t.index}`) + (t.supported ? "" : " (image subtitles, not supported yet)"),
+              disabled: !t.supported,
+            })),
+          ],
+          value: subIndex === null ? "off" : String(subIndex),
+          onChange: (value) => {
+            const chosen = value === "off" ? null : Number(value);
+            setSubIndex(chosen);
+            const track = playback.subtitles.find((t) => t.index === chosen);
+            saveSubtitlePreference(chosen === null ? "off" : (track?.language ?? "off"));
+          },
+        }
+      : undefined;
+
+  const info = playback && (
+    <>
+      {playback.method === "transcode" && <p className="text-white/70">Using {playback.hardware}</p>}
+      {playback.plan.video?.kind === "encode" && (
+        <p className="text-white/80">
+          Video → H.264 {playback.plan.video.height}p at {(playback.plan.video.bitrate / 1_000_000).toFixed(1)} Mbps
+          {playback.plan.video.tonemap && " (HDR tone mapped to SDR)"}
+        </p>
+      )}
+      {playback.plan.audio?.kind === "encode" && <p className="text-white/80">Audio → AAC {playback.plan.audio.channels}ch</p>}
+      {playback.plan.reasons.length > 0 && (
+        <ul className="list-disc pl-4 text-white/70">
+          {playback.plan.reasons.map((r) => (
+            <li key={r}>{r}</li>
           ))}
-      </video>
-
-      <div
-        className={`pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent p-4 transition-opacity ${chromeVisible ? "opacity-100" : "opacity-0"}`}
-      >
-        <div className="pointer-events-auto flex items-center gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-            aria-label="Back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <p className="min-w-0 flex-1 truncate font-medium">{title}</p>
-          {file?.info && file.info.audio.length > 1 && (
-            <select
-              aria-label="Audio track"
-              className="h-9 cursor-pointer rounded-md bg-white/10 px-2 text-sm"
-              value={audioIndex ?? playback?.plan.audio_index ?? ""}
-              onChange={(e) => {
-                startAt.current = videoRef.current?.currentTime ?? 0;
-                setAudioIndex(Number(e.target.value));
-              }}
-            >
-              {file.info.audio.map((a) => (
-                <option key={a.index} value={a.index} className="text-black">
-                  {[a.language?.toUpperCase(), a.title, a.codec, `${a.channels}ch`].filter(Boolean).join(" · ")}
-                </option>
-              ))}
-            </select>
-          )}
-          {playback && playback.subtitles.length > 0 && (
-            <select
-              aria-label="Subtitles"
-              className="h-9 cursor-pointer rounded-md bg-white/10 px-2 text-sm"
-              value={subIndex ?? "off"}
-              onChange={(e) => {
-                const value = e.target.value;
-                const chosen = value === "off" ? null : Number(value);
-                setSubIndex(chosen);
-                const track = playback.subtitles.find((t) => t.index === chosen);
-                saveSubtitlePreference(chosen === null ? "off" : (track?.language ?? "off"));
-              }}
-            >
-              <option value="off" className="text-black">
-                Subtitles: off
-              </option>
-              {playback.subtitles.map((t) => (
-                <option key={t.index} value={t.index} disabled={!t.supported} className="text-black">
-                  {[t.language?.toUpperCase(), t.label !== t.language ? t.label : null, t.is_forced ? "forced" : null]
-                    .filter(Boolean)
-                    .join(" · ") || `Track ${t.index}`}
-                  {t.supported ? "" : " (image subtitles, not supported yet)"}
-                </option>
-              ))}
-            </select>
-          )}
-          {playback && (
-            <button
-              onClick={() => setShowInfo((s) => !s)}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md bg-white/10 px-2 py-1.5 text-sm hover:bg-white/20"
-            >
-              <Info className="h-4 w-4" /> {METHOD_LABEL[playback.method]}
-            </button>
-          )}
-        </div>
-        {showInfo && playback && (
-          <div className="pointer-events-auto mt-3 ml-auto max-w-sm space-y-2 rounded-lg bg-black/80 p-4 text-sm">
-            <p>
-              <Badge className="bg-white/15 text-white">{METHOD_LABEL[playback.method]}</Badge>{" "}
-              {playback.method === "transcode" && <span className="text-white/70">using {playback.hardware}</span>}
-            </p>
-            {playback.plan.video?.kind === "encode" && (
-              <p className="text-white/80">
-                Video → H.264 {playback.plan.video.height}p at {(playback.plan.video.bitrate / 1_000_000).toFixed(1)} Mbps
-                {playback.plan.video.tonemap && " (HDR tone mapped to SDR)"}
-              </p>
-            )}
-            {playback.plan.audio?.kind === "encode" && (
-              <p className="text-white/80">Audio → AAC {playback.plan.audio.channels}ch</p>
-            )}
-            {playback.plan.reasons.length > 0 && (
-              <ul className="list-disc pl-4 text-white/70">
-                {playback.plan.reasons.map((r) => (
-                  <li key={r}>{r}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
-
-      {!playback && !error && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Spinner className="h-10 w-10" />
-        </div>
+        </ul>
       )}
-      {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-          <p className="text-lg font-medium">Couldn't play this</p>
-          <p className="text-white/70">{error}</p>
-        </div>
-      )}
-    </div>
+    </>
+  );
+
+  return (
+    <MediaPlayer
+      videoRef={videoRef}
+      title={title}
+      durationHint={playback ? playback.duration_ms / 1000 : undefined}
+      audio={audio}
+      subtitles={subtitles}
+      methodLabel={playback ? METHOD_LABEL[playback.method] : null}
+      infoContent={info}
+      loading={!playback && !error}
+      error={error}
+      onBack={() => navigate(-1)}
+      onPause={saveProgress}
+      onEnded={onEnded}
+    >
+      {playback?.subtitles
+        .filter((s) => s.supported)
+        .map((s) => (
+          <track key={s.index} id={`sub-${s.index}`} kind="subtitles" src={s.url} label={s.label} srcLang={s.language ?? undefined} />
+        ))}
+    </MediaPlayer>
   );
 }

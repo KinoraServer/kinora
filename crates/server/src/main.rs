@@ -55,13 +55,14 @@ pub fn router(state: AppState) -> Router {
 }
 
 pub async fn build_state(config: Config) -> anyhow::Result<AppState> {
-    for dir in [&config.config_dir, &config.cache_dir, &config.themes_dir()] {
+    for dir in [&config.config_dir, &config.cache_dir, &config.themes_dir(), &config.skins_dir()] {
         std::fs::create_dir_all(dir)?;
     }
     let example = config.themes_dir().join("example-ocean.json.sample");
     if !example.exists() {
         let _ = std::fs::write(&example, modules::themes::EXAMPLE_THEME);
     }
+    modules::skins::write_example(&config.skins_dir());
     let db = db::connect(&config.database_path()).await?;
     modules::seed_from_env(&db, config.tmdb_api_key.as_deref()).await?;
 

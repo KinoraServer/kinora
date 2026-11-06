@@ -22,6 +22,11 @@
   --kn-destructive: oklch(0.63 0.21 25);
   --kn-radius: 0.75rem;
   --kn-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Video player knobs; a theme's "player.options" can override these. */
+  --kn-player-bar-blur: 16px;
+  --kn-player-seek-height: 6px;
+  --kn-player-button-radius: 9999px;
+  --kn-player-controls-opacity: 0.85;
   color-scheme: dark;
 }
 

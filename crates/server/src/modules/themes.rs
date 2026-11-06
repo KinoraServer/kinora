@@ -30,6 +30,7 @@ fn theme(id: &str, name: &str, scheme: &str, tokens: &[(&str, &str)]) -> Theme {
         author: Some("Built-in".into()),
         scheme: scheme.into(),
         tokens: tokens.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<BTreeMap<_, _>>(),
+        player: None,
     }
 }
 
@@ -192,6 +193,10 @@ pub const EXAMPLE_THEME: &str = r#"{
     "primary-foreground": "oklch(0.18 0.03 230)",
     "ring": "oklch(0.78 0.13 195)",
     "radius": "1.25rem"
+  },
+  "player": {
+    "layout": "floating",
+    "options": { "seek-height": "8px", "bar-blur": "20px" }
   }
 }
 "#;

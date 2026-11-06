@@ -70,3 +70,16 @@ Positions and durations are integer ms, matching the "dates as Unix ms" default.
 ## Constraints
 - Don't copy Jellyfin code (GPL-2.0), names, logos or UI design. Any API compatibility is implemented clean-room from public API documentation.
 - Ask before adding new external services (metadata providers, telemetry, etc.).
+
+## D15: Player styles are layouts in one component; skins are sanitised markup + CSS
+
+**Status:** accepted (2026-11-06)
+
+All behaviour lives in one controller in `web/src/components/MediaPlayer.tsx`;
+the four built-in layouts only arrange shared controls, so every style has the
+same features. A theme may choose a layout and a few look knobs (data only).
+Fully custom markup is a separate module ("player-skins"): folders of
+`skin.html` + `skin.css` that are sanitised (server and browser), scoped, and
+wired through `data-kn-*` attributes. Rationale: themes stay drop-in data;
+anything that changes structure is a plugin-tier extension with its own
+safety checks. Deviation from the default stack: none (no new dependencies).

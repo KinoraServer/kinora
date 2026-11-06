@@ -52,6 +52,10 @@ impl Config {
         self.config_dir.join("themes")
     }
 
+    pub fn skins_dir(&self) -> PathBuf {
+        self.config_dir.join("player-skins")
+    }
+
     pub fn image_cache_dir(&self) -> PathBuf {
         self.cache_dir.join("images")
     }
