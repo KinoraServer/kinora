@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -306,7 +307,7 @@ private fun mediaSummary(info: MediaInfo): String {
 fun SettingsScreen(onChangeServer: () -> Unit, onSignedOut: () -> Unit) {
     val container = LocalContext.current.container
     val scope = rememberCoroutineScope()
-    val session = container.session.value
+    val session by container.session.collectAsStateWithLifecycle()
     val caps = remember { runCatching { describeCaps(container.caps()) }.getOrElse { "Couldn't read: ${it.message}" } }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
