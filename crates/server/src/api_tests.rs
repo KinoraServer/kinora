@@ -132,6 +132,39 @@ async fn viewers_cannot_do_admin_things() {
 }
 
 #[tokio::test]
+async fn player_style_is_server_wide_and_admin_only() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (_, body) = t.call("GET", "/api/player/style", None, Some(&owner)).await;
+    assert_eq!(body["style"], "theme");
+
+    let (s, _) = t.call("PUT", "/api/player/style", Some(json!({"style": "Bad Id!"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = t.call("PUT", "/api/player/style", Some(json!({"style": "cinematic"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+
+    t.call(
+        "POST",
+        "/api/users",
+        Some(json!({"username": "kid", "password": "password123", "role": "viewer"})),
+        Some(&owner),
+    )
+    .await;
+    let (_, login) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "kid", "password": "password123"})), None).await;
+    let viewer = login["token"].as_str().unwrap().to_string();
+
+    // Every signed-in client reads the same style, but only admins can change it.
+    let (s, body) = t.call("GET", "/api/player/style", None, Some(&viewer)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(body["style"], "cinematic");
+    let (s, _) = t.call("PUT", "/api/player/style", Some(json!({"style": "pro"})), Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("GET", "/api/player/style", None, None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn themes_are_public_and_include_builtins() {
     let t = app().await;
     let (s, body) = t.call("GET", "/api/themes", None, None).await;
@@ -169,44 +202,4 @@ async fn library_needs_existing_folder() {
         .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("folder not found"));
-}
-
-#[tokio::test]
-async fn library_icon_is_saved_and_validated() {
-    let t = app().await;
-    let owner = t.setup_owner().await;
-    let dir = std::env::temp_dir().to_string_lossy().to_string();
-
-    let (s, _) = t
-        .call(
-            "POST",
-            "/api/libraries",
-            Some(json!({"name": "Horror", "kind": "movies", "icon": "ghost", "paths": [dir]})),
-            Some(&owner),
-        )
-        .await;
-    assert_eq!(s, StatusCode::OK);
-    let (_, list) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
-    assert_eq!(list[0]["icon"], "ghost");
-
-    // an icon is optional
-    let (s, _) = t
-        .call("POST", "/api/libraries", Some(json!({"name": "Plain", "kind": "tv", "paths": [dir]})), Some(&owner))
-        .await;
-    assert_eq!(s, StatusCode::OK);
-    let (_, list) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
-    let plain = list.as_array().unwrap().iter().find(|l| l["name"] == "Plain").unwrap();
-    assert!(plain["icon"].is_null());
-
-    // anything that is not a plain icon name is refused
-    let (s, body) = t
-        .call(
-            "POST",
-            "/api/libraries",
-            Some(json!({"name": "Bad", "kind": "movies", "icon": "Film<script>", "paths": [dir]})),
-            Some(&owner),
-        )
-        .await;
-    assert_eq!(s, StatusCode::BAD_REQUEST);
-    assert!(body["error"].as_str().unwrap().contains("icon"));
 }

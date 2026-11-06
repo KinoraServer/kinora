@@ -22,7 +22,6 @@ import {
   Info,
   Maximize,
   Minimize,
-  Palette,
   Pause,
   PictureInPicture2,
   Play,
@@ -46,6 +45,7 @@ import { Spinner } from "@/components/ui/card";
 import { formatClock } from "@/lib/format";
 import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
+import { type PlayerStyleSetting, resolvePlayerStyle } from "@/lib/player-styles";
 import type { PlayerSkin } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -328,75 +328,23 @@ function usePlayerController(
 // Player styles (layouts)
 // ---------------------------------------------------------------------------
 
-export interface PlayerStyleInfo {
-  id: string;
-  name: string;
-  description: string;
-}
-
-export const BUILTIN_STYLES: PlayerStyleInfo[] = [
-  { id: "minimal", name: "Minimal", description: "A slim bar along the bottom." },
-  { id: "cinematic", name: "Cinematic", description: "Big centred controls and large type." },
-  { id: "floating", name: "Floating", description: "A rounded glass bar floating over the video." },
-  { id: "pro", name: "Pro", description: "Dense controls with labels and extra readouts." },
-];
-
-export const DEFAULT_STYLE = "minimal";
-/** The viewer's choice when they want whatever the theme says. */
-export const THEME_STYLE = "theme";
-const STYLE_KEY = "kinora.player-style";
-
 /**
- * Which layout to show. A viewer's own pick wins; "theme" (the default) means
- * the theme's `player.layout`; anything unknown (a skin that was removed)
- * falls back to the default layout.
+ * The layout this server uses for every client: an admin picks it on the
+ * Modules page. `ready` stays false until the setting and the skins have
+ * loaded, so the player doesn't flash one layout and then switch.
  */
-export function resolvePlayerStyle(
-  choice: string | null,
-  themeLayout: string | null | undefined,
-  skinIds: string[],
-): string {
-  const wanted = choice && choice !== THEME_STYLE ? choice : (themeLayout ?? DEFAULT_STYLE);
-  const known = BUILTIN_STYLES.some((s) => s.id === wanted) || skinIds.includes(wanted);
-  return known ? wanted : DEFAULT_STYLE;
-}
-
-function readStyleChoice(): string {
-  try {
-    return localStorage.getItem(STYLE_KEY) ?? THEME_STYLE;
-  } catch {
-    return THEME_STYLE;
-  }
-}
-
-function usePlayerStyle(skins: PlayerSkin[]) {
+function usePlayerStyle() {
   const { themes, current } = useTheme();
-  const [choice, setChoice] = useState(readStyleChoice);
+  const setting = useApi<PlayerStyleSetting>("api/player/style");
+  const skinList = useApi<PlayerSkin[]>("api/player-skins");
+  const skins = useMemo(() => skinList.data ?? [], [skinList.data]);
   const themeLayout = themes.find((t) => t.id === current)?.player?.layout;
-  const resolved = resolvePlayerStyle(
-    choice,
+  const style = resolvePlayerStyle(
+    setting.data?.style,
     themeLayout,
     skins.map((s) => s.id),
   );
-  const options: PlayerOption[] = [
-    {
-      value: THEME_STYLE,
-      label: `Theme default (${BUILTIN_STYLES.find((s) => s.id === themeLayout)?.name ?? skins.find((s) => s.id === themeLayout)?.name ?? "Minimal"})`,
-    },
-    ...BUILTIN_STYLES.map((s) => ({ value: s.id, label: s.name })),
-    ...skins.map((s) => ({ value: s.id, label: `${s.name} (custom)` })),
-  ];
-  const select = useCallback((value: string) => {
-    setChoice(value);
-    try {
-      localStorage.setItem(STYLE_KEY, value);
-    } catch {
-      // private mode: the pick just won't persist
-    }
-  }, []);
-  // The menu shows the viewer's choice (which may be "theme"), not the resolved layout.
-  const shownChoice = options.some((o) => o.value === choice) ? choice : THEME_STYLE;
-  return { resolved, options, choice: shownChoice, select };
+  return { style, skin: skins.find((k) => k.id === style), ready: !setting.loading && !skinList.loading };
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +355,6 @@ interface Ctx {
   s: PlayerState;
   a: PlayerActions;
   props: MediaPlayerProps;
-  styleChoice: PlayerChoice;
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -695,7 +642,7 @@ function speedChoice(c: Ctx): PlayerChoice {
   };
 }
 
-/** Audio, subtitles, speed, style, info, picture-in-picture, fullscreen: the same set in every layout. */
+/** Audio, subtitles, speed, info, picture-in-picture, fullscreen: the same set in every layout. */
 function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
   const { props, s, a } = c;
   const audioLabel = props.audio?.options.find((o) => o.value === props.audio?.value)?.label;
@@ -732,14 +679,6 @@ function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
         icon={<Gauge className="h-5 w-5" />}
         choice={speedChoice(c)}
         text={labelled ? `${s.rate}×` : undefined}
-      />
-      <MenuButton
-        c={c}
-        id="style"
-        label="Player style"
-        title="Player style"
-        icon={<Palette className="h-5 w-5" />}
-        choice={c.styleChoice}
       />
       <IconBtn label="Playback info" onClick={a.toggleInfo} active={s.infoOpen}>
         <Info className="h-5 w-5" />
@@ -1112,13 +1051,12 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
     const onChange = (e: Event) => {
       const sel = (e.target as HTMLElement).closest<HTMLSelectElement>("select[data-kn-select]");
       if (!sel) return;
-      const { props, styleChoice } = latest.current;
+      const { props } = latest.current;
       const speed: PlayerChoice = speedChoice(latest.current);
       const map: Record<string, PlayerChoice | undefined> = {
         audio: props.audio,
         subtitles: props.subtitles,
         speed,
-        style: styleChoice,
       };
       map[sel.dataset.knSelect ?? ""]?.onChange(sel.value);
     };
@@ -1181,11 +1119,9 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
           ? props.audio
           : kind === "subtitles"
             ? props.subtitles
-            : kind === "style"
-              ? c.styleChoice
-              : kind === "speed"
-                ? speedChoice(c)
-                : undefined,
+            : kind === "speed"
+              ? speedChoice(c)
+              : undefined,
       );
     }
   });
@@ -1217,24 +1153,16 @@ export function MediaPlayer(props: MediaPlayerProps) {
   const { videoRef, children, loading, error } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const { state: s, actions: a } = usePlayerController(videoRef, rootRef, props.durationHint ?? 0);
-  const { data: skinData } = useApi<PlayerSkin[]>("api/player-skins");
-  const skins = useMemo(() => skinData ?? [], [skinData]);
-  const style = usePlayerStyle(skins);
+  const { style, skin, ready } = usePlayerStyle();
 
-  const c: Ctx = {
-    s,
-    a,
-    props,
-    styleChoice: { options: style.options, value: style.choice, onChange: style.select },
-  };
-  const skin = skins.find((k) => k.id === style.resolved);
-  const Layout = LAYOUTS[style.resolved] ?? MinimalLayout;
+  const c: Ctx = { s, a, props };
+  const Layout = LAYOUTS[style] ?? MinimalLayout;
   const hidden = !s.controlsVisible;
 
   return (
     <div
       ref={rootRef}
-      data-player-style={style.resolved}
+      data-player-style={style}
       className={cn("fixed inset-0 z-50 overflow-hidden bg-black text-white", hidden && s.playing && "cursor-none")}
     >
       <video
@@ -1249,7 +1177,7 @@ export function MediaPlayer(props: MediaPlayerProps) {
         {children}
       </video>
 
-      {skin ? (
+      {!ready ? null : skin ? (
         <SkinLayout c={c} skin={skin} />
       ) : (
         <div
@@ -1264,7 +1192,7 @@ export function MediaPlayer(props: MediaPlayerProps) {
         </div>
       )}
 
-      {s.infoOpen && !skin && <InfoPanel c={c} />}
+      {ready && s.infoOpen && !skin && <InfoPanel c={c} />}
 
       {(loading || (s.buffering && !error)) && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

@@ -83,3 +83,8 @@ Fully custom markup is a separate module ("player-skins"): folders of
 wired through `data-kn-*` attributes. Rationale: themes stay drop-in data;
 anything that changes structure is a plugin-tier extension with its own
 safety checks. Deviation from the default stack: none (no new dependencies).
+
+Update (2026-11-06): the style is one server-wide setting (`player_style`,
+`GET`/`PUT /api/player/style`), chosen by an admin on the Modules & themes
+page, so every client shows the same player. The in-player style menu was
+removed.

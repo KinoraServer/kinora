@@ -105,8 +105,6 @@ export interface Library {
   id: string;
   name: string;
   kind: "movies" | "tv";
-  /** lucide icon name chosen in the library form; null means use the default for the kind */
-  icon?: string | null;
   paths: string[];
   created_at: number;
   last_scan_at: number | null;

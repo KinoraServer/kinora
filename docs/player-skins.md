@@ -11,8 +11,10 @@ picture, playback info, keyboard shortcuts). Only the layout and look differ.
 | Floating | A rounded glass bar floating over the video |
 | Pro | Dense bar with labels, time remaining and "ends at" |
 
-Viewers pick a style from the palette button in the player. The default is
-"Theme default", which follows the active theme.
+An admin picks the style once, in **Admin → Modules & themes → Player style**.
+It is saved on the server, so every browser and app that signs in to this
+server uses the same player; there is no style switcher inside the player.
+The default is "Follow the theme", which uses the active theme's `layout`.
 
 ## Themes and the player
 
@@ -56,8 +58,8 @@ player-skins/my-skin/
 
 Copy `player-skins/example-neon.sample` to a new folder name that does not end
 in `.sample`, then edit it. Refresh the web app and the skin appears in the
-player's style menu (marked "custom"). Themes can select it with
-`"layout": "my-skin"`.
+Player style list on the Modules & themes page (marked "custom skin"). Themes
+can also select it with `"layout": "my-skin"`.
 
 ### Wiring markup to the player
 
@@ -69,7 +71,7 @@ Add attributes to ordinary HTML elements; Kinora does the rest.
 | `data-kn-text="time"` | Fills the element with text. Others: `duration`, `remaining`, `title`, `method`, `resolution`, `buffer` |
 | `data-kn-seek` | A seek bar. Children: `data-kn-fill` (played), `data-kn-buffer` (buffered), `data-kn-thumb` (handle, positioned with `left`) |
 | `data-kn-volume` | A volume bar with a `data-kn-fill` child |
-| `select data-kn-select="audio"` | Filled with the audio tracks. Others: `subtitles`, `speed`, `style` |
+| `select data-kn-select="audio"` | Filled with the audio tracks. Others: `subtitles`, `speed` |
 | `data-kn-interactive` | Lets any other element receive clicks |
 
 The skin's root element carries state attributes you can style:
