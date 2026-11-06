@@ -6,15 +6,19 @@
 //! - if ffmpeg is already working towards N, wait for it;
 //! - otherwise (a seek), restart ffmpeg at N.
 //!
+//! If ffmpeg dies before producing the segment (a GPU driver crash, say), it
+//! is restarted on a more conservative pipeline (`fallback_profile`) until
+//! there's nothing left to fall back to.
+//!
 //! Idle sessions are killed and their folders deleted.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
-use kinora_core::ffmpeg::{hls_args, HlsJob, HwProfile};
+use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile};
 use kinora_core::hls::{segment_count, segment_name, SEGMENT_SECONDS};
 use kinora_core::playback::PlaybackPlan;
 use serde::Serialize;
@@ -53,6 +57,19 @@ struct Session {
     last_access: Instant,
     created: Instant,
     last_segment: u32,
+    /// Last line ffmpeg wrote to stderr, for error reports.
+    last_stderr: Arc<StdMutex<Option<String>>>,
+}
+
+/// Why a segment couldn't be served.
+#[derive(Debug, thiserror::Error)]
+pub enum SegmentError {
+    #[error("no such session")]
+    NoSession,
+    #[error("segment out of range")]
+    OutOfRange,
+    #[error(transparent)]
+    Failed(#[from] anyhow::Error),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -105,6 +122,7 @@ impl TranscodeManager {
             last_access: Instant::now(),
             created: Instant::now(),
             last_segment: 0,
+            last_stderr: Arc::default(),
         };
         self.sessions.lock().await.insert(id.clone(), Arc::new(Mutex::new(session)));
         Ok(id)
@@ -157,14 +175,14 @@ impl TranscodeManager {
     }
 
     /// Path of a finished segment, starting or restarting ffmpeg as needed.
-    pub async fn segment(&self, id: &str, index: u32) -> anyhow::Result<PathBuf> {
-        let session = self.get(id).await.ok_or_else(|| anyhow::anyhow!("no such session"))?;
+    pub async fn segment(&self, id: &str, index: u32) -> Result<PathBuf, SegmentError> {
+        let session = self.get(id).await.ok_or(SegmentError::NoSession)?;
         let deadline = Instant::now() + SEGMENT_TIMEOUT;
         {
             let s = session.lock().await;
             let count = segment_count(s.input.duration_ms, SEGMENT_SECONDS);
             if index >= count {
-                anyhow::bail!("segment out of range");
+                return Err(SegmentError::OutOfRange);
             }
         }
         loop {
@@ -179,21 +197,47 @@ impl TranscodeManager {
                     return Ok(path);
                 }
 
-                let running = match s.child.as_mut() {
-                    Some(c) => matches!(c.try_wait(), Ok(None)),
-                    None => false,
+                let exit = match s.child.as_mut() {
+                    Some(c) => c.try_wait().map_err(anyhow::Error::from)?,
+                    None => None,
                 };
+                let running = s.child.is_some() && exit.is_none();
                 let progress = latest_segment(&s.dir, s.started_at_segment).unwrap_or(s.started_at_segment);
                 let in_reach = running && index >= s.started_at_segment && index <= progress + MAX_WAIT_AHEAD;
                 if !in_reach {
-                    if !running && s.child.is_some() && index >= s.started_at_segment && index <= progress {
-                        anyhow::bail!("transcoder stopped before producing segment {index}");
+                    let died_before_it = index >= s.started_at_segment && index <= progress;
+                    match exit {
+                        Some(status) if died_before_it => {
+                            let stderr = s.last_stderr.lock().ok().and_then(|l| l.clone()).unwrap_or_default();
+                            tracing::warn!(
+                                session = %s.dir.display(),
+                                %status,
+                                stderr,
+                                "ffmpeg exited before producing segment {index}"
+                            );
+                            s.child = None;
+                            let fallback = if status.success() { None } else { fallback_profile(&s.input.hw) };
+                            let Some(next) = fallback else {
+                                return Err(anyhow::anyhow!(
+                                    "transcoder stopped before producing segment {index} ({status}) {stderr}"
+                                )
+                                .into());
+                            };
+                            tracing::warn!(
+                                session = %s.dir.display(),
+                                accel = next.accel.label(),
+                                tonemapper = ?next.tonemapper,
+                                "retrying with a more conservative pipeline"
+                            );
+                            s.input.hw = next;
+                        }
+                        _ => {}
                     }
                     self.start_ffmpeg(&mut s, index).await?;
                 }
             }
             if Instant::now() > deadline {
-                anyhow::bail!("timed out waiting for segment {index}");
+                return Err(anyhow::anyhow!("timed out waiting for segment {index}").into());
             }
             tokio::time::sleep(Duration::from_millis(150)).await;
         }
@@ -221,11 +265,18 @@ impl TranscodeManager {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()?;
+        if let Ok(mut last) = s.last_stderr.lock() {
+            *last = None;
+        }
         if let Some(stderr) = child.stderr.take() {
+            let last_stderr = s.last_stderr.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::warn!(target: "ffmpeg", "{line}");
+                    if let Ok(mut last) = last_stderr.lock() {
+                        *last = Some(line);
+                    }
                 }
             });
         }

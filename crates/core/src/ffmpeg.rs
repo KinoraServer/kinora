@@ -54,11 +54,100 @@ pub enum Tonemapper {
 pub struct HwProfile {
     pub accel: HwAccel,
     pub tonemapper: Tonemapper,
+    /// Index of the hardware Vulkan device libplacebo runs on. `None` lets
+    /// ffmpeg pick, which can land on a software device such as llvmpipe.
+    #[serde(default)]
+    pub vulkan_device: Option<u32>,
 }
 
 impl Default for HwProfile {
     fn default() -> Self {
-        HwProfile { accel: HwAccel::None, tonemapper: Tonemapper::None }
+        HwProfile { accel: HwAccel::None, tonemapper: Tonemapper::None, vulkan_device: None }
+    }
+}
+
+/// The next, more conservative profile to try after ffmpeg crashed with `hw`:
+/// first swap GPU tone mapping (libplacebo) for CPU tone mapping (zscale),
+/// then drop GPU decoding and encoding. `None` once there's nothing left to drop.
+pub fn fallback_profile(hw: &HwProfile) -> Option<HwProfile> {
+    if hw.tonemapper == Tonemapper::Libplacebo {
+        return Some(HwProfile { tonemapper: Tonemapper::Zscale, vulkan_device: None, ..hw.clone() });
+    }
+    if hw.accel != HwAccel::None {
+        return Some(HwProfile { accel: HwAccel::None, ..hw.clone() });
+    }
+    None
+}
+
+/// A Vulkan device as ffmpeg lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VulkanDevice {
+    pub index: u32,
+    pub name: String,
+    /// A CPU implementation (Mesa llvmpipe/lavapipe). Far too slow for 4K
+    /// tone mapping, and it crashes ffmpeg on large frames.
+    pub software: bool,
+}
+
+/// Initialise Vulkan with verbose logging so ffmpeg prints its "GPU listing".
+pub fn vulkan_list_args() -> Vec<String> {
+    [
+        "-hide_banner",
+        "-v",
+        "verbose",
+        "-nostdin",
+        "-init_hw_device",
+        "vulkan=vk",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=s=16x16",
+        "-frames:v",
+        "1",
+        "-f",
+        "null",
+        "-",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
+/// Parse the "GPU listing" ffmpeg prints when it initialises Vulkan:
+///
+/// ```text
+/// [AVHWDeviceContext @ 0x55e7] GPU listing:
+/// [AVHWDeviceContext @ 0x55e7]     0: NVIDIA GeForce RTX 3060 (discrete) (0x2504)
+/// [AVHWDeviceContext @ 0x55e7]     1: llvmpipe (LLVM 19.1.7, 256 bits) (software) (0x0)
+/// ```
+pub fn parse_vulkan_devices(stderr: &str) -> Vec<VulkanDevice> {
+    let mut out = Vec::new();
+    let mut in_listing = false;
+    for line in stderr.lines() {
+        let body = line.split_once("] ").map(|(_, b)| b).unwrap_or(line);
+        if body.trim() == "GPU listing:" {
+            in_listing = true;
+            continue;
+        }
+        if !in_listing {
+            continue;
+        }
+        let entry = body.trim().split_once(": ").and_then(|(i, rest)| Some((i.parse::<u32>().ok()?, rest)));
+        let Some((index, rest)) = entry else { break };
+        let name = rest.split(" (").next().unwrap_or(rest).to_string();
+        out.push(VulkanDevice { index, name, software: rest.contains("(software)") });
+    }
+    out
+}
+
+/// The first hardware (non-software) Vulkan device.
+pub fn pick_vulkan_device(devices: &[VulkanDevice]) -> Option<&VulkanDevice> {
+    devices.iter().find(|d| !d.software)
+}
+
+fn vulkan_init(device: Option<u32>) -> String {
+    match device {
+        Some(i) => format!("vulkan=vk:{i}"),
+        None => "vulkan=vk".into(),
     }
 }
 
@@ -105,7 +194,8 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
             a.extend(["-filter_hw_device".into(), "va".into()]);
         }
         if wants_tonemap && tonemapper == Tonemapper::Libplacebo {
-            a.extend(["-init_hw_device", "vulkan=vk", "-filter_hw_device", "vk"].map(String::from));
+            a.extend(["-init_hw_device".into(), vulkan_init(job.hw.vulkan_device)]);
+            a.extend(["-filter_hw_device", "vk"].map(String::from));
         }
         // Decode on the GPU, but let ffmpeg copy frames back to system memory
         // so the same filters work for every vendor. Dolby Vision is decoded
@@ -259,10 +349,12 @@ pub fn encoder_test_args(accel: &HwAccel) -> Vec<String> {
 }
 
 /// A short test of a tone mapper on a synthetic 10-bit HDR frame.
-pub fn tonemap_test_args(tonemapper: Tonemapper) -> Option<Vec<String>> {
+/// `vulkan_device` is only used by libplacebo.
+pub fn tonemap_test_args(tonemapper: Tonemapper, vulkan_device: Option<u32>) -> Option<Vec<String>> {
     let mut a: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"].map(String::from).to_vec();
     if tonemapper == Tonemapper::Libplacebo {
-        a.extend(["-init_hw_device", "vulkan=vk", "-filter_hw_device", "vk"].map(String::from));
+        a.extend(["-init_hw_device".into(), vulkan_init(vulkan_device)]);
+        a.extend(["-filter_hw_device", "vk"].map(String::from));
     }
     a.extend(["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=10", "-t", "0.5", "-vf"].map(String::from));
     let tm = match tonemapper {
@@ -327,7 +419,7 @@ mod tests {
     }
 
     fn run(plan: &PlaybackPlan, accel: HwAccel, tonemapper: Tonemapper, dv: bool, start: u32) -> String {
-        let hw = HwProfile { accel, tonemapper };
+        let hw = HwProfile { accel, tonemapper, vulkan_device: None };
         hls_args(&HlsJob {
             input: "/media/Movie (2020)/Movie.mkv",
             plan,
@@ -394,8 +486,71 @@ mod tests {
     #[test]
     fn hardware_test_commands() {
         insta::assert_snapshot!(encoder_test_args(&HwAccel::Vaapi { device: "/dev/dri/renderD128".into() }).join(" "));
-        insta::assert_snapshot!(tonemap_test_args(Tonemapper::Libplacebo).unwrap().join(" "));
-        assert!(tonemap_test_args(Tonemapper::None).is_none());
+        insta::assert_snapshot!(tonemap_test_args(Tonemapper::Libplacebo, None).unwrap().join(" "));
+        assert!(tonemap_test_args(Tonemapper::None, None).is_none());
+        let args = tonemap_test_args(Tonemapper::Libplacebo, Some(1)).unwrap().join(" ");
+        assert!(args.contains("-init_hw_device vulkan=vk:1 "), "{args}");
+    }
+
+    #[test]
+    fn libplacebo_uses_the_chosen_vulkan_device() {
+        let plan = transcode_plan(true);
+        let hw = HwProfile { accel: HwAccel::Nvenc, tonemapper: Tonemapper::Libplacebo, vulkan_device: Some(1) };
+        let args = hls_args(&HlsJob {
+            input: "/m/a.mkv",
+            plan: &plan,
+            hw: &hw,
+            video_index: Some(0),
+            source_is_dolby_vision: false,
+            frame_rate: None,
+            segment_seconds: 6,
+            start_segment: 0,
+            output_dir: "/tmp/x",
+        })
+        .join(" ");
+        assert!(args.contains("-init_hw_device vulkan=vk:1 -filter_hw_device vk"), "{args}");
+    }
+
+    // Real output from an Unraid box where the NVIDIA Vulkan driver wasn't in the container.
+    const ONLY_LLVMPIPE: &str = "\
+[AVHWDeviceContext @ 0x55e7ee0a2e80] GPU listing:
+[AVHWDeviceContext @ 0x55e7ee0a2e80]     0: llvmpipe (LLVM 19.1.7, 256 bits) (software) (0x0)
+[AVHWDeviceContext @ 0x55e7ee0a2e80] Device 0 selected: llvmpipe (LLVM 19.1.7, 256 bits) (software) (0x0)
+[AVHWDeviceContext @ 0x55e7ee0a2e80] Using device extension VK_KHR_push_descriptor
+";
+
+    const NVIDIA_AND_LLVMPIPE: &str = "\
+[AVHWDeviceContext @ 0x1] GPU listing:
+[AVHWDeviceContext @ 0x1]     0: llvmpipe (LLVM 19.1.7, 256 bits) (software) (0x0)
+[AVHWDeviceContext @ 0x1]     1: NVIDIA GeForce RTX 3060 (discrete) (0x2504)
+[AVHWDeviceContext @ 0x1] Device 0 selected: llvmpipe (LLVM 19.1.7, 256 bits) (software) (0x0)
+";
+
+    #[test]
+    fn vulkan_listing_with_only_software_has_no_usable_device() {
+        let devices = parse_vulkan_devices(ONLY_LLVMPIPE);
+        assert_eq!(devices, vec![VulkanDevice { index: 0, name: "llvmpipe".into(), software: true }]);
+        assert_eq!(pick_vulkan_device(&devices), None);
+        assert!(parse_vulkan_devices("no listing here").is_empty());
+    }
+
+    #[test]
+    fn vulkan_listing_picks_the_gpu_over_llvmpipe() {
+        let devices = parse_vulkan_devices(NVIDIA_AND_LLVMPIPE);
+        assert_eq!(devices.len(), 2);
+        let gpu = pick_vulkan_device(&devices).unwrap();
+        assert_eq!((gpu.index, gpu.name.as_str()), (1, "NVIDIA GeForce RTX 3060"));
+    }
+
+    #[test]
+    fn fallback_steps_down_to_software() {
+        let hw = HwProfile { accel: HwAccel::Nvenc, tonemapper: Tonemapper::Libplacebo, vulkan_device: Some(0) };
+        let step1 = fallback_profile(&hw).unwrap();
+        assert_eq!(step1, HwProfile { accel: HwAccel::Nvenc, tonemapper: Tonemapper::Zscale, vulkan_device: None });
+        let step2 = fallback_profile(&step1).unwrap();
+        assert_eq!(step2.accel, HwAccel::None);
+        assert_eq!(step2.tonemapper, Tonemapper::Zscale);
+        assert_eq!(fallback_profile(&step2), None);
     }
 
     #[test]
