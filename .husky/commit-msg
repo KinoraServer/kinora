@@ -1,0 +1,3 @@
+# Check the message follows Conventional Commits, e.g. "feat(web): add a library icon picker".
+# Rules are in commitlint.config.mjs. Skip once with: git commit --no-verify
+pnpm exec commitlint --edit "$1"

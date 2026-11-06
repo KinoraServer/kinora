@@ -2,18 +2,21 @@
   "name": "kinora-dev",
   "private": true,
   "license": "GPL-2.0-only",
-  "description": "Dev tooling for the Kinora repo (git hooks and formatting). The app itself is in crates/ and web/.",
+  "description": "Dev tooling for the Kinora repo (git hooks, commit linting and formatting). The app itself is in crates/ and web/.",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "prepare": "husky",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "lint:commits": "commitlint --from origin/main --to HEAD --verbose"
   },
   "lint-staged": {
     "web/**/*.{ts,tsx,css,json}": "prettier --write",
     "*.{md,yml,yaml}": "prettier --write"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.0",
     "prettier": "^3.6.2"
