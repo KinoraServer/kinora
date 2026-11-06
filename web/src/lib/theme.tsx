@@ -13,6 +13,9 @@ export function applyTheme(theme: Theme, root: HTMLElement = document.documentEl
   for (const [token, value] of Object.entries(theme.tokens)) {
     root.style.setProperty(`--kn-${token}`, value);
   }
+  for (const [option, value] of Object.entries(theme.player?.options ?? {})) {
+    root.style.setProperty(`--kn-player-${option}`, value);
+  }
   root.style.colorScheme = theme.scheme;
   root.dataset.theme = theme.id;
 }

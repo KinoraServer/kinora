@@ -47,6 +47,11 @@ controls like scrollbars and the video player.
 Any CSS colour works (`#ff7a59`, `rgb(...)`, `oklch(...)`). Values can't
 contain `;`, `{`, `}`, `<` or `>`; invalid files are skipped and logged.
 
+## Player style
+
+A theme can also pick a video player layout and tweak its look. See
+[player-skins.md](player-skins.md).
+
 ## Later
 
 Themes use the same format that theme plugins and the marketplace will

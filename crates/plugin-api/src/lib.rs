@@ -36,6 +36,7 @@ pub struct ModuleInfo {
 pub enum ExtensionPoint {
     MetadataProvider,
     Theme,
+    PlayerSkin,
     EventSubscriber,
 }
 
@@ -124,6 +125,33 @@ pub struct Theme {
     /// Token name (without the leading `--`) to CSS value, e.g.
     /// `"primary": "oklch(0.7 0.15 250)"`, `"radius": "0.75rem"`.
     pub tokens: BTreeMap<String, String>,
+    /// Optional video player preferences: which layout to use and a few
+    /// look-and-feel knobs. Data only, like the tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player: Option<PlayerTheme>,
+}
+
+/// The `player` block of a theme.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PlayerTheme {
+    /// A built-in layout id ("minimal", "cinematic", "floating", "pro") or the
+    /// id of an installed player skin. Viewers can still pick their own.
+    #[serde(default)]
+    pub layout: Option<String>,
+    /// Keys from [`PLAYER_OPTIONS`] to CSS values, e.g. `"seek-height": "8px"`.
+    #[serde(default)]
+    pub options: BTreeMap<String, String>,
+}
+
+/// Player look-and-feel options a theme may set (applied as `--kn-player-*`).
+pub const PLAYER_OPTIONS: &[&str] = &["bar-blur", "seek-height", "button-radius", "controls-opacity"];
+
+fn valid_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn valid_css_value(v: &str) -> bool {
+    v.len() <= 200 && !v.contains([';', '{', '}', '<', '>']) && !v.to_lowercase().contains("url(")
 }
 
 fn default_scheme() -> String {
@@ -153,10 +181,7 @@ impl Theme {
     /// Validate a theme from an untrusted file: sane id, known tokens only,
     /// and values that can't break out of a CSS declaration.
     pub fn validate(&self) -> Result<(), String> {
-        let id_ok = !self.id.is_empty()
-            && self.id.len() <= 64
-            && self.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if !id_ok {
+        if !valid_id(&self.id) {
             return Err(format!("invalid theme id {:?}", self.id));
         }
         if self.scheme != "dark" && self.scheme != "light" {
@@ -168,6 +193,76 @@ impl Theme {
             }
             if v.len() > 200 || v.contains([';', '{', '}', '<', '>']) {
                 return Err(format!("invalid value for {k:?}"));
+            }
+        }
+        if let Some(player) = &self.player {
+            if let Some(layout) = &player.layout {
+                if !valid_id(layout) {
+                    return Err(format!("invalid player layout {layout:?}"));
+                }
+            }
+            for (k, v) in &player.options {
+                if !PLAYER_OPTIONS.contains(&k.as_str()) {
+                    return Err(format!("unknown player option {k:?}"));
+                }
+                if !valid_css_value(v) {
+                    return Err(format!("invalid value for player option {k:?}"));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Player skins
+// ---------------------------------------------------------------------------
+
+/// A custom video player skin: your own markup and CSS. The web app wires
+/// the markup to the player through `data-kn-*` attributes (docs/player-skins.md).
+/// Skins are installed by the server admin as folders in `player-skins/`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlayerSkin {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub author: Option<String>,
+    /// Markup (from `skin.html`). Filled in by the loader, not by `skin.json`.
+    #[serde(default)]
+    pub html: String,
+    /// Styles (from `skin.css`), scoped to this skin by the web app.
+    #[serde(default)]
+    pub css: String,
+}
+
+const MAX_SKIN_BYTES: usize = 200_000;
+
+impl PlayerSkin {
+    /// First line of defence for files from disk. The browser sanitises the
+    /// markup and CSS again before using them, so this is not the only check.
+    pub fn validate(&self) -> Result<(), String> {
+        if !valid_id(&self.id) {
+            return Err(format!("invalid skin id {:?}", self.id));
+        }
+        if self.name.trim().is_empty() || self.name.len() > 80 {
+            return Err("skin name must be 1-80 characters".into());
+        }
+        if self.html.trim().is_empty() {
+            return Err("skin.html is empty".into());
+        }
+        if self.html.len() > MAX_SKIN_BYTES || self.css.len() > MAX_SKIN_BYTES {
+            return Err("skin files are too large".into());
+        }
+        let html = self.html.to_lowercase();
+        for bad in ["<script", "<iframe", "<object", "<embed", "<link", "<style", "<base", "<meta", "javascript:"] {
+            if html.contains(bad) {
+                return Err(format!("skin.html may not contain {bad:?}"));
+            }
+        }
+        let css = self.css.to_lowercase();
+        for bad in ["@import", "expression(", "-moz-binding", "behavior:", "</"] {
+            if css.contains(bad) {
+                return Err(format!("skin.css may not contain {bad:?}"));
             }
         }
         Ok(())
@@ -206,6 +301,7 @@ mod tests {
             author: None,
             scheme: "dark".into(),
             tokens: tokens.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            player: None,
         }
     }
 
@@ -229,5 +325,31 @@ mod tests {
                 .unwrap();
         assert_eq!(t.scheme, "dark");
         assert!(t.validate().is_ok());
+    }
+
+    #[test]
+    fn player_block_is_validated() {
+        let ok =
+            r##"{"id":"p","name":"P","tokens":{},"player":{"layout":"cinematic","options":{"seek-height":"8px"}}}"##;
+        assert!(serde_json::from_str::<Theme>(ok).unwrap().validate().is_ok());
+        let bad_opt = r##"{"id":"p","name":"P","tokens":{},"player":{"options":{"nope":"1"}}}"##;
+        assert!(serde_json::from_str::<Theme>(bad_opt).unwrap().validate().is_err());
+        let bad_val = r##"{"id":"p","name":"P","tokens":{},"player":{"options":{"bar-blur":"url(http://x)"}}}"##;
+        assert!(serde_json::from_str::<Theme>(bad_val).unwrap().validate().is_err());
+        let bad_layout = r##"{"id":"p","name":"P","tokens":{},"player":{"layout":"../x"}}"##;
+        assert!(serde_json::from_str::<Theme>(bad_layout).unwrap().validate().is_err());
+    }
+
+    fn skin(html: &str, css: &str) -> PlayerSkin {
+        PlayerSkin { id: "neon".into(), name: "Neon".into(), author: None, html: html.into(), css: css.into() }
+    }
+
+    #[test]
+    fn skin_validation() {
+        assert!(skin("<div data-kn-action=\"play\"></div>", ".a { color: red }").validate().is_ok());
+        assert!(skin("<script>alert(1)</script>", "").validate().is_err());
+        assert!(skin("<a href=\"javascript:x\">x</a>", "").validate().is_err());
+        assert!(skin("<div></div>", "@import 'http://x';").validate().is_err());
+        assert!(skin("", "").validate().is_err());
     }
 }

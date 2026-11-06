@@ -129,6 +129,16 @@ export interface Theme {
   author?: string | null;
   scheme: "dark" | "light";
   tokens: Record<string, string>;
+  player?: { layout?: string | null; options?: Record<string, string> } | null;
+}
+
+/** A custom player skin installed by the server admin (see docs/player-skins.md). */
+export interface PlayerSkin {
+  id: string;
+  name: string;
+  author?: string | null;
+  html: string;
+  css: string;
 }
 
 export interface PlaybackPlan {

@@ -3,6 +3,7 @@
 //! will be registered the same way once the Wasm host exists (plan §4).
 
 pub mod activity;
+pub mod skins;
 pub mod themes;
 pub mod tmdb;
 
@@ -19,7 +20,7 @@ use crate::state::AppState;
 
 /// All built-in modules.
 pub fn builtin() -> Vec<ModuleInfo> {
-    vec![tmdb::info(), themes::info(), activity::info()]
+    vec![tmdb::info(), themes::info(), skins::info(), activity::info()]
 }
 
 pub fn find(id: &str) -> Option<ModuleInfo> {
@@ -80,6 +81,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/modules", get(list))
         .route("/api/modules/{id}", put(update))
         .route("/api/themes", get(themes::list))
+        .route("/api/player-skins", get(skins::list))
 }
 
 #[derive(Serialize)]
