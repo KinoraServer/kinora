@@ -1,6 +1,7 @@
 {
   "name": "kinora-dev",
   "private": true,
+  "license": "MIT",
   "description": "Dev tooling for the Kinora repo (git hooks and formatting). The app itself is in crates/ and web/.",
   "packageManager": "pnpm@10.28.0",
   "scripts": {

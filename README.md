@@ -119,3 +119,8 @@ command, `cargo insta review` shows the diff.
 
 After cloning, run `pnpm install` in the repo root once. That sets up a git hook that formats staged web files with
 Prettier and checks `cargo fmt` and `cargo clippy` when Rust files change. `pnpm format` formats everything.
+
+## License
+
+Kinora is released under the [MIT License](LICENSE). FFmpeg is not linked into
+the binary; it runs as a separate program under its own (L)GPL licence.

@@ -3,6 +3,7 @@ name = "kinora-plugin-api"
 description = "Extension points shared by built-in modules and (later) community plugins."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 serde.workspace = true
