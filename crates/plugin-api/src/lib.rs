@@ -329,7 +329,8 @@ mod tests {
 
     #[test]
     fn player_block_is_validated() {
-        let ok = r##"{"id":"p","name":"P","tokens":{},"player":{"layout":"cinematic","options":{"seek-height":"8px"}}}"##;
+        let ok =
+            r##"{"id":"p","name":"P","tokens":{},"player":{"layout":"cinematic","options":{"seek-height":"8px"}}}"##;
         assert!(serde_json::from_str::<Theme>(ok).unwrap().validate().is_ok());
         let bad_opt = r##"{"id":"p","name":"P","tokens":{},"player":{"options":{"nope":"1"}}}"##;
         assert!(serde_json::from_str::<Theme>(bad_opt).unwrap().validate().is_err());
