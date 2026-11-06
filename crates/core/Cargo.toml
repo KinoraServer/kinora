@@ -1,0 +1,12 @@
+[package]
+name = "kinora-core"
+description = "Pure media-server logic: no I/O, fully unit-testable."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+insta = "1"

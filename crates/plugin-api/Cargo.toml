@@ -1,0 +1,11 @@
+[package]
+name = "kinora-plugin-api"
+description = "Extension points shared by built-in modules and (later) community plugins."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+anyhow.workspace = true

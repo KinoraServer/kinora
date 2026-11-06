@@ -1,0 +1,22 @@
+# Kinora with Docker Compose.
+#   1. Change the media path below.
+#   2. If you have an Intel or AMD GPU, uncomment `devices`.
+#      NVIDIA: uncomment `runtime: nvidia` (needs the NVIDIA Container Toolkit,
+#      or the "Nvidia Driver" plugin on Unraid).
+#   3. docker compose up -d, then open http://<server-ip>:8420
+services:
+  kinora:
+    image: ghcr.io/lancealthouse/kinora:latest
+    container_name: kinora
+    ports:
+      - "8420:8420"
+    volumes:
+      - ./config:/config            # database, settings, themes (back this up)
+      - /path/to/media:/media:ro    # your movies and shows
+      # - /tmp/kinora:/transcode    # optional: transcode temp files on a RAM disk / fast SSD
+    # devices:
+    #   - /dev/dri:/dev/dri         # Intel / AMD hardware transcoding
+    # runtime: nvidia               # NVIDIA hardware transcoding
+    environment:
+      - TMDB_API_KEY=               # optional: can also be set in Admin → Modules
+    restart: unless-stopped

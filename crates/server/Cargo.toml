@@ -1,0 +1,38 @@
+[package]
+name = "kinora-server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "kinora"
+path = "src/main.rs"
+
+[dependencies]
+kinora-core = { path = "../core" }
+kinora-plugin-api = { path = "../plugin-api" }
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+axum = { version = "0.8.9", features = ["macros"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+tokio = { version = "1.54.1", features = ["full"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "set-header"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+argon2 = "0.5"
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4.3"
+walkdir = "2.5.0"
+tracing = "0.1.44"
+uuid = { version = "1.29.0", features = ["v7", "serde"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+rust-embed = { version = "8.13.0", features = ["mime-guess"] }
+time = "0.3"
+tower = { version = "0.5", features = ["util"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tempfile = "3.27.0"

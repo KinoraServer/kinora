@@ -1,0 +1,5 @@
+---
+source: crates/core/src/ffmpeg.rs
+expression: "tonemap_test_args(Tonemapper::Libplacebo).unwrap().join(\" \")"
+---
+-hide_banner -loglevel error -nostdin -init_hw_device vulkan=vk -filter_hw_device vk -f lavfi -i testsrc2=size=640x360:rate=10 -t 0.5 -vf format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc,hwupload,libplacebo=w=640:h=360:tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p,hwdownload,format=yuv420p -f null -

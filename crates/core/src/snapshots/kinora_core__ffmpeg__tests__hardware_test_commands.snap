@@ -1,0 +1,5 @@
+---
+source: crates/core/src/ffmpeg.rs
+expression: "encoder_test_args(&HwAccel::Vaapi\n{ device: \"/dev/dri/renderD128\".into() }).join(\" \")"
+---
+-hide_banner -loglevel error -nostdin -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 -vf format=nv12,hwupload -c:v h264_vaapi -profile:v high -b:v 4000000 -maxrate 4000000 -bufsize 8000000 -f null -
