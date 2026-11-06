@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Home servers on a LAN or Tailscale usually have no HTTPS certificate, so
+  plain http:// is allowed for the server address you type in. The app shows
+  a "not encrypted" note on the sign-in screen when the address isn't https.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -10,3 +10,5 @@ crates
 packaging
 docs
 **/*.sample
+clients/android/**/build
+clients/android/.gradle

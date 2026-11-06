@@ -88,3 +88,9 @@ Update (2026-11-06): the style is one server-wide setting (`player_style`,
 `GET`/`PUT /api/player/style`), chosen by an admin on the Modules & themes
 page, so every client shows the same player. The in-player style menu was
 removed.
+
+## D16 — Android TV client in Kotlin + Compose for TV + Media3 (accepted, 2026-11-06)
+
+**Decision**: The Android TV app lives in `clients/android/` in this repo. It is native Kotlin with Jetpack Compose for TV and AndroidX Media3 (ExoPlayer), with plain-Kotlin `core` modules (models, API client, capability rules) that are unit-tested on the JVM. It is a thin client: it reports what the TV can play and the server's decision engine picks direct play, remux or transcode. TV comes first (tested on an NVIDIA Shield); a phone app will reuse the same `core` modules.
+**Why**: The player is most of the app, and Media3 gives full control over Dolby Vision, HDR, PGS subtitles and audio passthrough. Keeping it in this repo means a server API change and the client change land in one PR.
+**Deviation from the default stack**: Kotlin instead of TypeScript/Next.js, Material for TV instead of Tailwind/shadcn, JUnit instead of Vitest, sideloaded APKs from GitHub Releases instead of Vercel. The API client is hand-written until the OpenAPI spec (D11) exists. Full reasoning: the Android plan in the project files (`kinora-android/docs/`).
