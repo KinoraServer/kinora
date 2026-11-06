@@ -1,3 +1,6 @@
+// Media3 marks parts of its API as unstable; this app opts in deliberately.
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package app.kinora.tv.ui.screens
 
 import android.app.Application
@@ -12,7 +15,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import app.kinora.api.KinoraApi
 import app.kinora.model.ItemDetail
@@ -62,7 +64,6 @@ data class PlayerUiState(
  * Owns the ExoPlayer for one item: asks the server how to play it, plays it,
  * reports progress, and tells the server when it's done.
  */
-@UnstableApi
 class PlayerViewModel(
     application: Application,
     private val itemId: String,

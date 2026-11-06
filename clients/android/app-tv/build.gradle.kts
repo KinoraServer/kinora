@@ -65,6 +65,9 @@ android {
         // TV-specific checks (banner, leanback launcher, no touch requirement) stay on.
         abortOnError = true
         checkReleaseBuilds = false
+        // Print every issue in the CI log, not just the first.
+        textReport = true
+        textOutput = file("stdout")
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
     }
 }
