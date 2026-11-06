@@ -85,7 +85,7 @@ object DeviceCaps {
         } else {
             display.hdrCapabilities?.supportedHdrTypes ?: IntArray(0)
         }
-        return types.mapNotNull {
+        return types.toList().mapNotNull {
             when (it) {
                 Display.HdrCapabilities.HDR_TYPE_HDR10 -> HdrFormat.Hdr10
                 Display.HdrCapabilities.HDR_TYPE_HLG -> HdrFormat.Hlg
@@ -101,7 +101,7 @@ object DeviceCaps {
             ?: return emptySet<String>() to 2
         if (intent.getIntExtra(AudioManager.EXTRA_AUDIO_PLUG_STATE, 0) != 1) return emptySet<String>() to 2
         val encodings = intent.getIntArrayExtra(AudioManager.EXTRA_ENCODINGS) ?: IntArray(0)
-        val names = encodings.mapNotNull {
+        val names = encodings.toList().mapNotNull {
             when (it) {
                 AudioFormat.ENCODING_AC3 -> "ac3"
                 AudioFormat.ENCODING_E_AC3, AudioFormat.ENCODING_E_AC3_JOC -> "eac3"
