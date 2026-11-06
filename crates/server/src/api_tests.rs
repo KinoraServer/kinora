@@ -170,3 +170,43 @@ async fn library_needs_existing_folder() {
     assert_eq!(s, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("folder not found"));
 }
+
+#[tokio::test]
+async fn library_icon_is_saved_and_validated() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let dir = std::env::temp_dir().to_string_lossy().to_string();
+
+    let (s, _) = t
+        .call(
+            "POST",
+            "/api/libraries",
+            Some(json!({"name": "Horror", "kind": "movies", "icon": "ghost", "paths": [dir]})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    assert_eq!(list[0]["icon"], "ghost");
+
+    // an icon is optional
+    let (s, _) = t
+        .call("POST", "/api/libraries", Some(json!({"name": "Plain", "kind": "tv", "paths": [dir]})), Some(&owner))
+        .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let plain = list.as_array().unwrap().iter().find(|l| l["name"] == "Plain").unwrap();
+    assert!(plain["icon"].is_null());
+
+    // anything that is not a plain icon name is refused
+    let (s, body) = t
+        .call(
+            "POST",
+            "/api/libraries",
+            Some(json!({"name": "Bad", "kind": "movies", "icon": "Film<script>", "paths": [dir]})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("icon"));
+}

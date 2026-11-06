@@ -27,6 +27,7 @@ struct LibraryView {
     id: String,
     name: String,
     kind: String,
+    icon: Option<String>,
     paths: Vec<String>,
     created_at: i64,
     last_scan_at: Option<i64>,
@@ -35,8 +36,8 @@ struct LibraryView {
 }
 
 async fn list(State(state): State<AppState>, _user: AuthUser) -> AppResult<Json<Vec<LibraryView>>> {
-    let rows: Vec<(String, String, String, String, i64, Option<i64>, i64)> = sqlx::query_as(
-        "SELECT l.id, l.name, l.kind, l.paths, l.created_at, l.last_scan_at,
+    let rows: Vec<(String, String, String, Option<String>, String, i64, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT l.id, l.name, l.kind, l.icon, l.paths, l.created_at, l.last_scan_at,
                 (SELECT COUNT(*) FROM items i WHERE i.library_id = l.id AND i.kind IN ('movie','series'))
          FROM libraries l ORDER BY l.name",
     )
@@ -45,11 +46,12 @@ async fn list(State(state): State<AppState>, _user: AuthUser) -> AppResult<Json<
     let status = state.scans.status().await;
     Ok(Json(
         rows.into_iter()
-            .map(|(id, name, kind, paths, created_at, last_scan_at, item_count)| LibraryView {
+            .map(|(id, name, kind, icon, paths, created_at, last_scan_at, item_count)| LibraryView {
                 scan: status.get(&id).cloned(),
                 id,
                 name,
                 kind,
+                icon,
                 paths: serde_json::from_str(&paths).unwrap_or_default(),
                 created_at,
                 last_scan_at,
@@ -63,7 +65,16 @@ async fn list(State(state): State<AppState>, _user: AuthUser) -> AppResult<Json<
 struct LibraryInput {
     name: String,
     kind: String,
+    /// A lucide icon name like "film"; none means the web app picks one from the kind.
+    #[serde(default)]
+    icon: Option<String>,
     paths: Vec<String>,
+}
+
+fn valid_icon(icon: &str) -> bool {
+    !icon.is_empty()
+        && icon.len() <= 40
+        && icon.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 fn validate(input: &LibraryInput) -> AppResult<()> {
@@ -72,6 +83,9 @@ fn validate(input: &LibraryInput) -> AppResult<()> {
     }
     if input.kind != "movies" && input.kind != "tv" {
         return Err(AppError::BadRequest("kind must be movies or tv".into()));
+    }
+    if input.icon.as_deref().is_some_and(|i| !valid_icon(i)) {
+        return Err(AppError::BadRequest("icon must be a lowercase icon name like film".into()));
     }
     if input.paths.is_empty() {
         return Err(AppError::BadRequest("add at least one folder".into()));
@@ -91,10 +105,11 @@ async fn create(
 ) -> AppResult<Json<serde_json::Value>> {
     validate(&input)?;
     let id = new_id();
-    sqlx::query("INSERT INTO libraries (id, name, kind, paths, created_at) VALUES (?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO libraries (id, name, kind, icon, paths, created_at) VALUES (?, ?, ?, ?, ?, ?)")
         .bind(&id)
         .bind(input.name.trim())
         .bind(&input.kind)
+        .bind(&input.icon)
         .bind(serde_json::to_string(&input.paths).map_err(anyhow::Error::from)?)
         .bind(now_ms())
         .execute(&state.db)
@@ -110,9 +125,10 @@ async fn update(
     Json(input): Json<LibraryInput>,
 ) -> AppResult<Json<serde_json::Value>> {
     validate(&input)?;
-    let res = sqlx::query("UPDATE libraries SET name = ?, kind = ?, paths = ? WHERE id = ?")
+    let res = sqlx::query("UPDATE libraries SET name = ?, kind = ?, icon = ?, paths = ? WHERE id = ?")
         .bind(input.name.trim())
         .bind(&input.kind)
+        .bind(&input.icon)
         .bind(serde_json::to_string(&input.paths).map_err(anyhow::Error::from)?)
         .bind(&id)
         .execute(&state.db)

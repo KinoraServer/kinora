@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, Empty, ErrorNote } from "@/components/ui/card";
+import { IconPicker, NamedIcon, libraryIcon } from "@/components/IconPicker";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -54,6 +55,7 @@ export function LibrariesPage() {
           <div key={lib.id} className="flex flex-wrap items-center justify-between gap-4 p-5">
             <div className="min-w-0 space-y-1">
               <p className="flex items-center gap-2 font-medium">
+                <NamedIcon name={libraryIcon(lib)} className="h-4 w-4 text-muted-foreground" />
                 {lib.name} <Badge>{lib.kind === "tv" ? "TV shows" : "Movies"}</Badge>
               </p>
               <p className="truncate font-mono text-xs text-muted-foreground">{lib.paths.join(", ")}</p>
@@ -94,6 +96,7 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"movies" | "tv">("movies");
   const [paths, setPaths] = useState<string[]>([]);
+  const [icon, setIcon] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -102,8 +105,9 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
     setBusy(true);
     setError(null);
     try {
-      await api.post("api/libraries", { name, kind, paths });
+      await api.post("api/libraries", { name, kind, icon, paths });
       setName("");
+      setIcon(null);
       setPaths([]);
       onAdded();
     } catch (err) {
@@ -127,6 +131,12 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
             </Select>
           </Field>
         </div>
+        <Field
+          label="Icon"
+          help="Shown next to the library in the menu. Leave it empty to use the default for the type."
+        >
+          <IconPicker value={icon} onChange={setIcon} clearable label="Library icon" />
+        </Field>
         <Field label="Folders" help="Pick one or more folders. Sub-folders are included.">
           <div className="mb-2 space-y-1">
             {paths.map((p) => (

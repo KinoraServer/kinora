@@ -1,5 +1,6 @@
+import { NamedIcon, libraryIcon } from "@/components/IconPicker";
 import { Logo } from "@/components/Logo";
-import { Clapperboard, Home, LogOut, Palette, Search, Settings, Tv } from "lucide-react";
+import { Home, LogOut, Palette, Search, Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import { useApi, useSession } from "@/lib/session";
@@ -33,7 +34,7 @@ export function AppLayout() {
             </NavLink>
             {libraries?.map((lib) => (
               <NavLink key={lib.id} to={`/library/${lib.id}`} className={navClass}>
-                {lib.kind === "tv" ? <Tv className="h-4 w-4" /> : <Clapperboard className="h-4 w-4" />}
+                <NamedIcon name={libraryIcon(lib)} className="h-4 w-4" />
                 {lib.name}
               </NavLink>
             ))}
