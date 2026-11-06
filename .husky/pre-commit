@@ -1,0 +1,8 @@
+# Format staged web/markdown/yaml files with Prettier.
+pnpm exec lint-staged
+
+# If Rust files are staged, check formatting and lints (skip with HUSKY=0).
+if git diff --cached --name-only | grep -qE '\.rs$|Cargo\.(toml|lock)$'; then
+  cargo fmt --all -- --check || { echo "Run 'cargo fmt --all' and re-stage."; exit 1; }
+  cargo clippy --workspace --all-targets -- -D warnings
+fi

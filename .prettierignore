@@ -1,0 +1,12 @@
+target
+node_modules
+web/dist
+web/pnpm-lock.yaml
+pnpm-lock.yaml
+Cargo.lock
+dev-config
+dev-media
+crates
+packaging
+docs
+**/*.sample
