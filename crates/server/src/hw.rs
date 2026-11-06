@@ -6,7 +6,10 @@
 
 use std::time::Duration;
 
-use kinora_core::ffmpeg::{encoder_test_args, tonemap_test_args, HwAccel, HwProfile, Tonemapper};
+use kinora_core::ffmpeg::{
+    encoder_test_args, parse_vulkan_devices, pick_vulkan_device, tonemap_test_args, vulkan_list_args, HwAccel,
+    HwProfile, Tonemapper,
+};
 use serde::Serialize;
 use tokio::process::Command;
 
@@ -122,9 +125,22 @@ pub async fn detect(ffmpeg: &str, preference: &str) -> HardwareReport {
         }
     }
 
+    // libplacebo only on a real GPU: a software Vulkan device (Mesa llvmpipe)
+    // passes the small test below but crashes ffmpeg on 4K frames.
+    let vulkan = find_vulkan_gpu(ffmpeg).await;
     let mut tonemapper = Tonemapper::None;
     for t in [Tonemapper::Libplacebo, Tonemapper::Zscale] {
-        let Some(args) = tonemap_test_args(t) else { continue };
+        if t == Tonemapper::Libplacebo {
+            if let Err(e) = &vulkan {
+                report.tests.push(BackendTest {
+                    name: "Tone mapping: libplacebo (Vulkan)".into(),
+                    ok: false,
+                    error: Some(e.clone()),
+                });
+                continue;
+            }
+        }
+        let Some(args) = tonemap_test_args(t, vulkan.clone().ok()) else { continue };
         let result = run_ffmpeg(ffmpeg, &args, Duration::from_secs(20)).await;
         let ok = result.is_ok();
         let name = match t {
@@ -138,8 +154,30 @@ pub async fn detect(ffmpeg: &str, preference: &str) -> HardwareReport {
         }
     }
 
-    tracing::info!(accel = chosen.label(), ?tonemapper, "hardware detection finished");
-    report.profile = HwProfile { accel: chosen, tonemapper };
+    let vulkan_device = if tonemapper == Tonemapper::Libplacebo { vulkan.ok() } else { None };
+    tracing::info!(accel = chosen.label(), ?tonemapper, ?vulkan_device, "hardware detection finished");
+    report.profile = HwProfile { accel: chosen, tonemapper, vulkan_device };
     report.detected_at = Some(crate::db::now_ms());
     report
+}
+
+/// Index of the first hardware Vulkan device, or why there isn't one.
+async fn find_vulkan_gpu(ffmpeg: &str) -> Result<u32, String> {
+    let fut = Command::new(ffmpeg).args(vulkan_list_args()).kill_on_drop(true).output();
+    let out = match tokio::time::timeout(Duration::from_secs(20), fut).await {
+        Err(_) => return Err("timed out listing Vulkan devices".into()),
+        Ok(Err(e)) => return Err(e.to_string()),
+        Ok(Ok(out)) => out,
+    };
+    let devices = parse_vulkan_devices(&String::from_utf8_lossy(&out.stderr));
+    tracing::info!(?devices, "Vulkan devices");
+    match pick_vulkan_device(&devices) {
+        Some(d) => Ok(d.index),
+        None if devices.is_empty() => Err("no Vulkan devices found".into()),
+        None => Err(format!(
+            "only software Vulkan found ({}); the GPU's Vulkan driver isn't available here \
+             (Docker with NVIDIA: NVIDIA_DRIVER_CAPABILITIES must include \"graphics\")",
+            devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", ")
+        )),
+    }
 }
