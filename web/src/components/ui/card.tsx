@@ -5,7 +5,15 @@ export function Card({ className, ...p }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("rounded-lg border bg-card text-card-foreground", className)} {...p} />;
 }
 
-export function CardHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+export function CardHeader({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex items-start justify-between gap-4 border-b p-5">
       <div>
@@ -20,7 +28,10 @@ export function CardHeader({ title, description, action }: { title: string; desc
 export function Badge({ className, ...p }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      className={cn("inline-flex items-center rounded-sm bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground", className)}
+      className={cn(
+        "inline-flex items-center rounded-sm bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground",
+        className,
+      )}
       {...p}
     />
   );
@@ -36,7 +47,15 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
-export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Switch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
   return (
     <button
       type="button"

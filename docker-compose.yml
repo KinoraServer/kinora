@@ -11,12 +11,12 @@ services:
     ports:
       - "8420:8420"
     volumes:
-      - ./config:/config            # database, settings, themes (back this up)
-      - /path/to/media:/media:ro    # your movies and shows
+      - ./config:/config # database, settings, themes (back this up)
+      - /path/to/media:/media:ro # your movies and shows
       # - /tmp/kinora:/transcode    # optional: transcode temp files on a RAM disk / fast SSD
     # devices:
     #   - /dev/dri:/dev/dri         # Intel / AMD hardware transcoding
     # runtime: nvidia               # NVIDIA hardware transcoding
     environment:
-      - TMDB_API_KEY=               # optional: can also be set in Admin → Modules
+      - TMDB_API_KEY= # optional: can also be set in Admin → Modules
     restart: unless-stopped

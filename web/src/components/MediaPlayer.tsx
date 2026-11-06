@@ -478,7 +478,11 @@ function IconBtn({
 function PlayPause({ c, className, iconClass = "h-5 w-5" }: { c: Ctx; className?: string; iconClass?: string }) {
   return (
     <IconBtn label={c.s.playing ? "Pause" : "Play"} onClick={c.a.toggle} className={className}>
-      {c.s.playing ? <Pause className={iconClass} fill="currentColor" /> : <Play className={iconClass} fill="currentColor" />}
+      {c.s.playing ? (
+        <Pause className={iconClass} fill="currentColor" />
+      ) : (
+        <Play className={iconClass} fill="currentColor" />
+      )}
     </IconBtn>
   );
 }
@@ -541,7 +545,10 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
       aria-valuemax={Math.floor(duration)}
       aria-valuenow={Math.floor(s.currentTime)}
       aria-valuetext={`${formatClock(s.currentTime)} of ${formatClock(duration)}`}
-      className={cn("group/seek pointer-events-auto relative flex h-5 w-full cursor-pointer touch-none items-center", className)}
+      className={cn(
+        "group/seek pointer-events-auto relative flex h-5 w-full cursor-pointer touch-none items-center",
+        className,
+      )}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         a.setScrubbing(true);
@@ -571,7 +578,10 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
         <div className="absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${shown * 100}%` }} />
         <div
           className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 scale-0 rounded-full bg-primary shadow transition-transform group-hover/seek:scale-100 group-focus-visible/seek:scale-100"
-          style={{ left: `${shown * 100}%`, transform: scrub !== null ? "translate(-50%, -50%) scale(1.2)" : undefined }}
+          style={{
+            left: `${shown * 100}%`,
+            transform: scrub !== null ? "translate(-50%, -50%) scale(1.2)" : undefined,
+          }}
         />
       </div>
       {hover !== null && duration > 0 && (
@@ -905,7 +915,10 @@ function ProLayout({ c }: { c: Ctx }) {
           </span>
         )}
       </div>
-      <div className="absolute inset-x-0 bottom-0 border-t border-border px-3 pt-1 pb-2" style={glass({ borderRadius: 0 })}>
+      <div
+        className="absolute inset-x-0 bottom-0 border-t border-border px-3 pt-1 pb-2"
+        style={glass({ borderRadius: 0 })}
+      >
         <Seek c={c} />
         <div className="flex items-center gap-1">
           <PlayPause c={c} className="h-9 w-9" />
@@ -944,7 +957,17 @@ const FORBIDDEN_TAGS = new Set([
   "script", "iframe", "frame", "frameset", "object", "embed", "link", "style", "meta", "base", "form",
   "input", "textarea", "video", "audio", "source", "track", "canvas", "foreignobject", "template", "slot",
 ]); // prettier-ignore
-const URL_ATTRS = new Set(["src", "href", "xlink:href", "srcset", "action", "formaction", "poster", "data", "background"]);
+const URL_ATTRS = new Set([
+  "src",
+  "href",
+  "xlink:href",
+  "srcset",
+  "action",
+  "formaction",
+  "poster",
+  "data",
+  "background",
+]);
 
 const isSafeUrl = (value: string) => /^\s*(#|data:image\/(png|jpe?g|gif|webp|svg\+xml|avif);)/i.test(value);
 const hasUrlCall = (value: string) => /url\s*\(/i.test(value);
@@ -1171,7 +1194,15 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
       const kind = sel.dataset.knSelect;
       fillSelect(
         sel,
-        kind === "audio" ? props.audio : kind === "subtitles" ? props.subtitles : kind === "style" ? c.styleChoice : kind === "speed" ? speedChoice(c) : undefined,
+        kind === "audio"
+          ? props.audio
+          : kind === "subtitles"
+            ? props.subtitles
+            : kind === "style"
+              ? c.styleChoice
+              : kind === "speed"
+                ? speedChoice(c)
+                : undefined,
       );
     }
   });

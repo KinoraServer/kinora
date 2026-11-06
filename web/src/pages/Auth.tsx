@@ -47,7 +47,13 @@ function CredentialsForm({ endpoint, button, minLength }: { endpoint: string; bu
   return (
     <form onSubmit={submit} className="space-y-4">
       <Field label="Username">
-        <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required autoFocus />
+        <Input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          required
+          autoFocus
+        />
       </Field>
       <Field label="Password" help={minLength ? `At least ${minLength} characters.` : undefined}>
         <Input
@@ -69,7 +75,10 @@ function CredentialsForm({ endpoint, button, minLength }: { endpoint: string; bu
 
 export function SetupPage() {
   return (
-    <AuthShell title="Welcome to Kinora" subtitle="Create the owner account for this server. You can add more people later.">
+    <AuthShell
+      title="Welcome to Kinora"
+      subtitle="Create the owner account for this server. You can add more people later."
+    >
       <CredentialsForm endpoint="api/setup" button="Create account" minLength={8} />
     </AuthShell>
   );

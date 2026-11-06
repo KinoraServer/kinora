@@ -225,7 +225,9 @@ export function PlayerPage() {
           {playback.plan.video.tonemap && " (HDR tone mapped to SDR)"}
         </p>
       )}
-      {playback.plan.audio?.kind === "encode" && <p className="text-white/80">Audio → AAC {playback.plan.audio.channels}ch</p>}
+      {playback.plan.audio?.kind === "encode" && (
+        <p className="text-white/80">Audio → AAC {playback.plan.audio.channels}ch</p>
+      )}
       {playback.plan.reasons.length > 0 && (
         <ul className="list-disc pl-4 text-white/70">
           {playback.plan.reasons.map((r) => (
@@ -254,7 +256,14 @@ export function PlayerPage() {
       {playback?.subtitles
         .filter((s) => s.supported)
         .map((s) => (
-          <track key={s.index} id={`sub-${s.index}`} kind="subtitles" src={s.url} label={s.label} srcLang={s.language ?? undefined} />
+          <track
+            key={s.index}
+            id={`sub-${s.index}`}
+            kind="subtitles"
+            src={s.url}
+            label={s.label}
+            srcLang={s.language ?? undefined}
+          />
         ))}
     </MediaPlayer>
   );

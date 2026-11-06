@@ -32,7 +32,9 @@ export function ModulesPage() {
   return (
     <div className="space-y-6">
       <ErrorNote message={error} />
-      {data?.map((m) => <ModuleCard key={m.id} module={m} onChange={reload} />)}
+      {data?.map((m) => (
+        <ModuleCard key={m.id} module={m} onChange={reload} />
+      ))}
 
       <Card>
         <CardHeader
@@ -49,8 +51,9 @@ export function ModulesPage() {
             ))}
           </div>
           <p className="text-muted-foreground">
-            Start from <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code>: copy it to a new name ending
-            in <code className="rounded bg-muted px-1">.json</code>, change the id, name and colours. See docs/themes.md for every token.
+            Start from <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code>: copy it to a new
+            name ending in <code className="rounded bg-muted px-1">.json</code>, change the id, name and colours. See
+            docs/themes.md for every token.
           </p>
         </div>
       </Card>
@@ -123,7 +126,9 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
             <Button size="sm" onClick={saveSettings} disabled={Object.keys(values).length === 0}>
               Save
             </Button>
-            {saved && <span className="text-sm text-muted-foreground">Saved. New metadata is fetched on the next scan.</span>}
+            {saved && (
+              <span className="text-sm text-muted-foreground">Saved. New metadata is fetched on the next scan.</span>
+            )}
           </div>
           <ErrorNote message={error} />
         </div>

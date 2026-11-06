@@ -48,7 +48,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   return (
-    <SessionContext.Provider value={{ info, user, loading, refresh, logout, isAdmin }}>{children}</SessionContext.Provider>
+    <SessionContext.Provider value={{ info, user, loading, refresh, logout, isAdmin }}>
+      {children}
+    </SessionContext.Provider>
   );
 }
 

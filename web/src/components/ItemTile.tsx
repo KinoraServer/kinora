@@ -55,7 +55,12 @@ export function MediaRow({ title, items, wide }: { title: string; items: ItemCar
       <h2 className="text-lg font-semibold">{title}</h2>
       <div className="scrollbar-none -mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-8 sm:px-8">
         {items.map((item) => (
-          <ItemTile key={item.id} item={item} wide={wide} className={wide || item.kind === "episode" ? "w-64 shrink-0" : "w-36 shrink-0 sm:w-40"} />
+          <ItemTile
+            key={item.id}
+            item={item}
+            wide={wide}
+            className={wide || item.kind === "episode" ? "w-64 shrink-0" : "w-36 shrink-0 sm:w-40"}
+          />
         ))}
       </div>
     </section>

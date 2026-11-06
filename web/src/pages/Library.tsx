@@ -23,7 +23,13 @@ export function LibraryPage() {
           {data && <p className="text-sm text-muted-foreground">{data.length} titles</p>}
         </div>
         <div className="flex gap-2">
-          <Input placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} className="w-44" aria-label="Filter" />
+          <Input
+            placeholder="Filter"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="w-44"
+            aria-label="Filter"
+          />
           <Select value={sort} onChange={(e) => setSort(e.target.value)} className="w-40" aria-label="Sort">
             <option value="title">Title</option>
             <option value="added">Recently added</option>
