@@ -41,6 +41,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 import { Spinner } from "@/components/ui/card";
 import { formatClock } from "@/lib/format";
 import { useApi } from "@/lib/session";
@@ -290,48 +291,28 @@ function usePlayerController(
     };
   }, [videoRef, rootRef, durationHint, poke]);
 
-  // Keyboard shortcuts (ignored while typing in a field or using a menu).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const v = videoRef.current;
-      if (!v) return;
-      const handled = (fn: () => void) => {
-        e.preventDefault();
-        fn();
-        poke();
-      };
-      switch (e.key) {
-        case " ":
-        case "k":
-          return handled(actions.toggle);
-        case "ArrowLeft":
-          return handled(() => actions.skip(-5));
-        case "ArrowRight":
-          return handled(() => actions.skip(5));
-        case "j":
-          return handled(() => actions.skip(-10));
-        case "l":
-          return handled(() => actions.skip(10));
-        case "ArrowUp":
-          return handled(() => actions.setVolume(v.volume + 0.1));
-        case "ArrowDown":
-          return handled(() => actions.setVolume(v.volume - 0.1));
-        case "m":
-          return handled(actions.toggleMute);
-        case "f":
-          return handled(actions.toggleFullscreen);
-        case "i":
-          return handled(actions.toggleInfo);
-        case "Escape":
-          return setOpenMenu(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [videoRef, actions, poke]);
+  // Keyboard shortcuts. TanStack Hotkeys skips keys a focused control needs
+  // (typing in a field, Space on a button, arrows in a menu or slider) and
+  // only matches exact modifiers, so Ctrl+K and friends are left alone.
+  const run = (fn: () => void) => () => {
+    fn();
+    poke();
+  };
+  const volumeBy = (delta: number) => () => actions.setVolume((videoRef.current?.volume ?? 1) + delta);
+  useHotkeys([
+    { hotkey: "Space", callback: run(actions.toggle) },
+    { hotkey: "K", callback: run(actions.toggle) },
+    { hotkey: "ArrowLeft", callback: run(() => actions.skip(-5)) },
+    { hotkey: "ArrowRight", callback: run(() => actions.skip(5)) },
+    { hotkey: "J", callback: run(() => actions.skip(-10)) },
+    { hotkey: "L", callback: run(() => actions.skip(10)) },
+    { hotkey: "ArrowUp", callback: run(volumeBy(0.1)) },
+    { hotkey: "ArrowDown", callback: run(volumeBy(-0.1)) },
+    { hotkey: "M", callback: run(actions.toggleMute) },
+    { hotkey: "F", callback: run(actions.toggleFullscreen) },
+    { hotkey: "I", callback: run(actions.toggleInfo) },
+    { hotkey: "Escape", callback: () => setOpenMenu(null), options: { enabled: openMenu !== null } },
+  ]);
 
   const state: PlayerState = {
     ...snap,
@@ -528,6 +509,15 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
   };
   const shown = scrub ?? (duration > 0 ? clamp(s.currentTime / duration, 0, 1) : 0);
   const buffered = duration > 0 ? clamp(s.bufferedEnd / duration, 0, 1) : 0;
+  // Arrow keys while the seek bar itself has focus (they stop here, so the
+  // player-wide arrow shortcuts don't also fire).
+  useHotkeys(
+    [
+      { hotkey: "ArrowLeft", callback: () => a.skip(-5) },
+      { hotkey: "ArrowRight", callback: () => a.skip(5) },
+    ],
+    { target: ref },
+  );
   const finish = () => {
     if (scrub !== null) {
       a.seek(scrub * duration);
@@ -562,13 +552,6 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
       onPointerUp={finish}
       onPointerCancel={finish}
       onPointerLeave={() => setHover(null)}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") a.skip(-5);
-        else if (e.key === "ArrowRight") a.skip(5);
-        else return;
-        e.preventDefault();
-        e.stopPropagation();
-      }}
     >
       <div
         className="relative w-full overflow-visible rounded-full bg-white/25 transition-[height]"
@@ -604,6 +587,13 @@ function Volume({ c, slider = true }: { c: Ctx; slider?: boolean }) {
     if (r && r.width > 0) a.setVolume((clientX - r.left) / r.width);
   };
   const level = s.muted ? 0 : s.volume;
+  useHotkeys(
+    [
+      { hotkey: "ArrowLeft", callback: () => a.setVolume(s.volume - 0.1) },
+      { hotkey: "ArrowRight", callback: () => a.setVolume(s.volume + 0.1) },
+    ],
+    { target: ref },
+  );
   return (
     <div className="pointer-events-auto flex items-center">
       <IconBtn label={s.muted ? "Unmute" : "Mute"} onClick={a.toggleMute}>
@@ -624,13 +614,6 @@ function Volume({ c, slider = true }: { c: Ctx; slider?: boolean }) {
             set(e.clientX);
           }}
           onPointerMove={(e) => e.buttons === 1 && set(e.clientX)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowLeft") a.setVolume(s.volume - 0.1);
-            else if (e.key === "ArrowRight") a.setVolume(s.volume + 0.1);
-            else return;
-            e.preventDefault();
-            e.stopPropagation();
-          }}
         >
           <div className="relative h-1 w-full rounded-full bg-white/25">
             <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${level * 100}%` }} />

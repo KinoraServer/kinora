@@ -5,6 +5,7 @@ import {
   Podcast, Popcorn, Radio, Rocket, Shield, Skull, Smile, Snowflake, Sparkles, Star, Sun, Swords, Tag, Theater, Trophy,
   Tv, User, Users, Utensils, Video, Wine, Zap, ChevronDown, Search, X, Film, MonitorPlay, Projector, Ticket, type LucideIcon,
 } from "lucide-react"; // prettier-ignore
+import { useHotkey } from "@tanstack/react-hotkeys";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -102,14 +103,13 @@ export function IconPicker({
     const onPointer = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     window.addEventListener("pointerdown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointerdown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("pointerdown", onPointer);
   }, [open]);
+
+  // Escape closes the picker. It listens on the picker itself (focus is in its
+  // search box) and stops there, so a dialog around it stays open.
+  useHotkey("Escape", () => setOpen(false), { enabled: open, target: rootRef });
 
   const pick = (name: string | null) => {
     onChange(name);

@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tanstack/react-hotkeys": "0.22.0",
     "clsx": "^2.1.1",
     "hls.js": "^1.7.4",
     "lucide-react": "^1.70.0",
