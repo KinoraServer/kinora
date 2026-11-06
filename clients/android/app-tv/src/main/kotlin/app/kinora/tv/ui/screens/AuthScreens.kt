@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -94,7 +95,8 @@ fun ConnectScreen(onConnected: () -> Unit) {
 fun SignInScreen(onSignedIn: () -> Unit, onChangeServer: () -> Unit) {
     val container = LocalContext.current.container
     val scope = rememberCoroutineScope()
-    val session = container.session.value ?: Session()
+    val current by container.session.collectAsStateWithLifecycle()
+    val session = current ?: Session()
     var username by rememberSaveable { mutableStateOf(session.username ?: "") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
