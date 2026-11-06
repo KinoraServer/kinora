@@ -127,7 +127,12 @@ pub async fn detect(ffmpeg: &str, preference: &str) -> HardwareReport {
 
     // libplacebo only on a real GPU: a software Vulkan device (Mesa llvmpipe)
     // passes the small test below but crashes ffmpeg on 4K frames.
-    let vulkan = find_vulkan_gpu(ffmpeg).await;
+    // "Off (CPU only)" keeps tone mapping off the GPU too.
+    let vulkan = if preference == "none" {
+        Err("hardware acceleration is off (CPU only)".to_string())
+    } else {
+        find_vulkan_gpu(ffmpeg).await
+    };
     let mut tonemapper = Tonemapper::None;
     for t in [Tonemapper::Libplacebo, Tonemapper::Zscale] {
         if t == Tonemapper::Libplacebo {
