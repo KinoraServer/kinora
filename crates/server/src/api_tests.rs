@@ -512,3 +512,53 @@ async fn auto_tracks_fall_back_to_the_library() {
     let (_, body) = t.call("POST", "/api/playback/fo", Some(start), Some(&owner)).await;
     assert!(body.get("auto_tracks").is_none());
 }
+
+#[tokio::test]
+async fn app_skins_starter_options_and_active_bundle() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+
+    // Off by default: nobody gets a skin.
+    let (s, _) = t.call("GET", "/api/app-skin/active", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    t.call("PUT", "/api/modules/app-skins", Some(json!({"enabled": true})), Some(&owner)).await;
+
+    let (s, body) = t.call("POST", "/api/app-skins/starters/marquee", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["id"], "marquee");
+    let (_, body) = t.call("POST", "/api/app-skins/starters/marquee", None, Some(&owner)).await;
+    assert_eq!(body["id"], "marquee-2", "a second copy gets a new id");
+    let (s, _) = t.call("POST", "/api/app-skins/starters/nope", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+
+    let (_, list) = t.call("GET", "/api/app-skins", None, Some(&owner)).await;
+    let skins = list["skins"].as_array().unwrap();
+    assert_eq!(skins.len(), 2);
+    assert!(skins.iter().all(|s| s["usable"] == true), "{list}");
+    assert_eq!(list["starters"], json!(["marquee", "blank"]));
+
+    // Options are checked, and can be changed without switching skins.
+    let (s, _) = t.call("PUT", "/api/app-skins/marquee/options", Some(json!({"card-size": "xl"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = t.call("PUT", "/api/app-skins/marquee/options", Some(json!({"card-size": "l"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+
+    let (s, _) = t.call("PUT", "/api/app-skin", Some(json!({"skin": "marquee"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, bundle) = t.call("GET", "/api/app-skin/active", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(bundle["id"], "marquee");
+    assert_eq!(bundle["optionValues"]["card-size"], "l");
+    assert!(bundle["templates"]["shell"].as_str().unwrap().contains("data-kn-slot=\"outlet\""));
+    assert!(bundle["css"].as_str().unwrap().contains(".mq-"));
+
+    // Viewers can't pick their own until the admin allows it.
+    let (_, mine) = t.call("GET", "/api/me/app-skin", None, Some(&owner)).await;
+    assert_eq!(mine["allowed"], false);
+    assert_eq!(mine["server"], "marquee");
+
+    let (s, _) = t.call("DELETE", "/api/app-skins/marquee-2", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/app-skins", None, Some(&owner)).await;
+    assert_eq!(list["skins"].as_array().unwrap().len(), 1);
+}

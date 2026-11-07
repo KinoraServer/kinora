@@ -26,15 +26,17 @@ export interface PlayerStyleSetting {
 
 /**
  * Which layout to show. The admin's pick (stored on the server) wins; "theme"
- * (the default) means the theme's `player.layout`; anything unknown (a skin
- * that was removed) falls back to the default layout.
+ * (the default) means the app skin's player when one is active, else the
+ * theme's `player.layout`; anything unknown (a skin that was removed) falls
+ * back to the default layout.
  */
 export function resolvePlayerStyle(
   choice: string | null | undefined,
   themeLayout: string | null | undefined,
   skinIds: string[],
+  appSkinPlayer?: string | null,
 ): string {
-  const wanted = choice && choice !== THEME_STYLE ? choice : (themeLayout ?? DEFAULT_STYLE);
+  const wanted = choice && choice !== THEME_STYLE ? choice : (appSkinPlayer ?? themeLayout ?? DEFAULT_STYLE);
   const known = BUILTIN_STYLES.some((s) => s.id === wanted) || skinIds.includes(wanted);
   return known ? wanted : DEFAULT_STYLE;
 }

@@ -24,7 +24,8 @@ The first time, install the test browser once: `pnpm exec playwright install chr
 | `web/.storybook/vitest.setup.ts` | Takes the screenshots for `pnpm test:visual` |
 | `web/.storybook/public/sample.webm` | A 90 minute gradient clip (136 KB) the player stories play |
 | `web/src/stories/` | Shared story helpers: mock data (`fixtures.ts`), fake server (`mock-api.ts`), player wrapper (`PlayerHarness.tsx`) |
-| `web/src/**/*.stories.tsx` | The stories, next to their components |
+| `web/src/stories/app-skins.ts` | The starter app skins (read from `crates/server/src/modules/app_skin_samples/`) as bundles, for the app skin playground |
+| `web/src/**/*.stories.tsx` | The stories, next to their components. **App skins → Playground** renders the whole app with a starter skin; edit a starter's files and it updates |
 
 ## Checking a component on every device
 

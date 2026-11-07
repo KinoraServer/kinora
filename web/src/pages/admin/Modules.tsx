@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
 import { ThemePicker } from "@/components/ThemePicker";
+import { AppSkinsCard } from "@/pages/admin/AppSkins";
+import { useSkin } from "@/skin-engine/SkinProvider";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { BUILTIN_STYLES, type PlayerStyleSetting, THEME_STYLE } from "@/lib/player-styles";
@@ -56,6 +58,8 @@ export function ModulesPage() {
         <ModuleCard key={m.id} module={m} onChange={reload} />
       ))}
 
+      {data?.find((m) => m.id === "app-skins")?.enabled && <AppSkinsCard />}
+
       <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} />
 
       <p className="text-xs text-muted-foreground">
@@ -80,6 +84,7 @@ function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
   const value = choice ?? savedStyle;
 
   const themeLayout = themes.find((t) => t.id === current)?.player?.layout;
+  const appSkinPlayer = useSkin().bundle?.player?.style;
   const nameOf = (id: string | null | undefined) =>
     BUILTIN_STYLES.find((s) => s.id === id)?.name ?? skins?.find((s) => s.id === id)?.name ?? "Minimal";
   const known =
@@ -113,7 +118,11 @@ function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
               onChange={(e) => setChoice(e.target.value)}
               disabled={setting.loading}
             >
-              <option value={THEME_STYLE}>Follow the theme ({nameOf(themeLayout)})</option>
+              <option value={THEME_STYLE}>
+                {appSkinPlayer
+                  ? `Follow the app skin (${nameOf(appSkinPlayer)})`
+                  : `Follow the theme (${nameOf(themeLayout)})`}
+              </option>
               {BUILTIN_STYLES.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}: {s.description}

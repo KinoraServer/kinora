@@ -1,5 +1,5 @@
 // The signed-in person's own settings: a list of sections (like a TV app's
-// settings menu), each opening its own page. Profile works today; Display,
+// settings menu), each opening its own page. Profile and Display work today;
 // Audio and Subtitles are placeholders for settings that come later.
 
 import { AudioLines, Captions, ChevronLeft, ChevronRight, MonitorCog, User, type LucideIcon } from "lucide-react";
@@ -7,12 +7,13 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { Link, Navigate, useParams } from "react-router";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, ErrorNote } from "@/components/ui/card";
+import { Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { shrinkToAvatar } from "@/lib/avatar-image";
-import { useSession } from "@/lib/session";
+import { useApi, useSession } from "@/lib/session";
 import type { User as UserType } from "@/lib/types";
+import { useSkin } from "@/skin-engine/SkinProvider";
 
 interface Section {
   id: string;
@@ -30,7 +31,13 @@ export const SECTIONS: Section[] = [
     icon: User,
     page: () => <ProfileSettings />,
   },
-  { id: "display", label: "Display", description: "Coming soon", icon: MonitorCog },
+  {
+    id: "display",
+    label: "Display",
+    description: "App skin",
+    icon: MonitorCog,
+    page: () => <DisplaySettings />,
+  },
   { id: "audio", label: "Audio", description: "Coming soon", icon: AudioLines },
   { id: "subtitles", label: "Subtitles", description: "Coming soon", icon: Captions },
 ];
@@ -94,6 +101,84 @@ function ComingSoon({ label }: { label: string }) {
       <p className="font-medium">{label} settings are coming</p>
       <p className="mt-1 text-sm text-muted-foreground">Nothing to change here yet.</p>
     </Card>
+  );
+}
+
+interface MySkin {
+  allowed: boolean;
+  server: string;
+  mine: string | null;
+  choices: { id: string; name: string; description: string | null; has_preview: boolean }[];
+}
+
+/** Display: which app skin to use (when the server allows picking) and safe mode for this browser. */
+export function DisplaySettings() {
+  const { data, setData, error } = useApi<MySkin>("api/me/app-skin");
+  const skin = useSkin();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, flash] = useSavedFlash();
+  const serverName = data?.choices.find((c) => c.id === data.server)?.name ?? "the standard look";
+
+  const pick = async (value: string | null) => {
+    setSaveError(null);
+    try {
+      await api.put("api/me/app-skin", { skin: value });
+      if (data) setData({ ...data, mine: value });
+      skin.reload();
+      flash();
+    } catch (e) {
+      setSaveError((e as Error).message);
+    }
+  };
+
+  const option = (value: string | null, label: string, description?: string | null) => (
+    <label
+      key={value ?? "follow"}
+      className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-accent"
+    >
+      <input
+        type="radio"
+        name="app-skin"
+        className="mt-1 cursor-pointer accent-[var(--kn-primary)]"
+        checked={(data?.mine ?? null) === value}
+        onChange={() => pick(value)}
+      />
+      <span>
+        <span className="block text-sm font-medium">{label}</span>
+        {description && <span className="block text-xs text-muted-foreground">{description}</span>}
+      </span>
+    </label>
+  );
+
+  return (
+    <div className="space-y-6">
+      {data?.allowed && (
+        <Card>
+          <CardHeader title="App skin" description="How the app looks for you, on every device you sign in on." />
+          <div className="space-y-1 p-3" role="radiogroup" aria-label="App skin">
+            {option(null, `Same as the server (${serverName})`)}
+            {option("none", "Kinora's standard look")}
+            {data.choices.map((c) => option(c.id, c.name, c.description))}
+          </div>
+          <div className="px-5 pb-4">
+            <ErrorNote message={saveError} />
+            {saved && <p className="text-sm text-muted-foreground">Saved.</p>}
+          </div>
+        </Card>
+      )}
+      <ErrorNote message={error} />
+      <Card>
+        <div className="flex items-center justify-between gap-4 p-5">
+          <div>
+            <p className="font-medium">Turn off skins in this browser</p>
+            <p className="text-sm text-muted-foreground">
+              Always use Kinora's standard look here, whatever skin is chosen. Only affects this browser.
+            </p>
+          </div>
+          <Switch label="Turn off skins in this browser" checked={skin.safeMode} onChange={skin.setSafeMode} />
+        </div>
+      </Card>
+    </div>
   );
 }
 

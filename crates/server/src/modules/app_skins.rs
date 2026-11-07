@@ -647,6 +647,8 @@ pub struct SkinList {
     pub skin_api: u32,
     pub supported: Vec<u32>,
     pub skins: Vec<SkinSummary>,
+    /// Starter skins that can be added with one click.
+    pub starters: Vec<String>,
 }
 
 async fn summary(state: &AppState, s: &LoadedSkin) -> SkinSummary {
@@ -696,6 +698,7 @@ pub async fn list(State(state): State<AppState>, _admin: AdminUser) -> AppResult
         skin_api: r.skin_api,
         supported: r.supported.clone(),
         skins,
+        starters: samples().into_iter().map(|(n, _)| n.to_string()).collect(),
     }))
 }
 
@@ -706,6 +709,27 @@ pub struct ActiveUpdate {
     /// Option values for that skin (only the keys given are changed).
     #[serde(default)]
     options: BTreeMap<String, String>,
+}
+
+/// Check and store option values for a skin (only the keys given change).
+async fn save_options(state: &AppState, skin: &LoadedSkin, options: &BTreeMap<String, String>) -> AppResult<()> {
+    if options.is_empty() {
+        return Ok(());
+    }
+    let m = skin.manifest().ok_or(AppError::NotFound)?;
+    let mut values = option_values(state, skin.id()).await;
+    for (k, v) in options {
+        let opt = m.options.get(k).ok_or_else(|| AppError::BadRequest(format!("unknown option {k}")))?;
+        let v = opt.check_value(v).map_err(|e| AppError::BadRequest(format!("{}: {e}", opt.label)))?;
+        values.insert(k.clone(), v);
+    }
+    set_setting(
+        &state.db,
+        &format!("app_skin_options:{}", skin.id()),
+        &serde_json::to_string(&values).unwrap_or_default(),
+    )
+    .await?;
+    Ok(())
 }
 
 /// `PUT /api/app-skin`: the skin everyone uses, and its options.
@@ -720,24 +744,42 @@ pub async fn put_active(
         if !skin.usable() {
             return Err(AppError::BadRequest("that skin has errors; fix them first".into()));
         }
-        if !body.options.is_empty() {
-            let m = skin.manifest().ok_or(AppError::NotFound)?;
-            let mut values = option_values(&state, id).await;
-            for (k, v) in &body.options {
-                let opt = m.options.get(k).ok_or_else(|| AppError::BadRequest(format!("unknown option {k}")))?;
-                let v = opt.check_value(v).map_err(|e| AppError::BadRequest(format!("{}: {e}", opt.label)))?;
-                values.insert(k.clone(), v);
-            }
-            set_setting(
-                &state.db,
-                &format!("app_skin_options:{id}"),
-                &serde_json::to_string(&values).unwrap_or_default(),
-            )
-            .await?;
-        }
+        save_options(&state, &skin, &body.options).await?;
     }
     set_setting(&state.db, ACTIVE_KEY, id).await?;
     Ok(Json(serde_json::json!({ "skin": id })))
+}
+
+/// `PUT /api/app-skins/{id}/options`: change a skin's options without switching to it.
+pub async fn put_options(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    UrlPath(id): UrlPath<String>,
+    Json(options): Json<BTreeMap<String, String>>,
+) -> AppResult<StatusCode> {
+    let skin = find(&state, &id).ok_or(AppError::NotFound)?;
+    save_options(&state, &skin, &options).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /api/app-skins/starters/{name}`: copy a starter skin in as a real skin
+/// (as `<name>`, or `<name>-2` and so on when that's taken).
+pub async fn add_starter(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    UrlPath(name): UrlPath<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    if !samples().iter().any(|(n, _)| *n == name) {
+        return Err(AppError::NotFound);
+    }
+    let dir = state.config.app_skins_dir();
+    let taken = |id: &str| dir.join(id).exists() || load_all(&dir).iter().any(|s| s.id() == id);
+    let id = (1..100)
+        .map(|n| if n == 1 { name.clone() } else { format!("{name}-{n}") })
+        .find(|id| !taken(id))
+        .ok_or_else(|| AppError::BadRequest("too many copies of that starter".into()))?;
+    write_starter(&dir, &name, &id, Some(&id))?;
+    Ok(Json(serde_json::json!({ "id": id })))
 }
 
 /// `DELETE /api/app-skins/{id}`: remove an installed skin folder.
