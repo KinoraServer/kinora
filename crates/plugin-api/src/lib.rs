@@ -127,6 +127,11 @@ pub struct Theme {
     /// "dark" or "light": hints the browser's built-in controls.
     #[serde(default = "default_scheme")]
     pub scheme: String,
+    /// Id of the same theme in the other scheme (a dark theme's light
+    /// version, or the reverse). Paired themes show as one choice that
+    /// follows the viewer's light/dark mode. Declaring it on one side is enough.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pair: Option<String>,
     /// Token name (without the leading `--`) to CSS value, e.g.
     /// `"primary": "oklch(0.7 0.15 250)"`, `"radius": "0.75rem"`.
     pub tokens: BTreeMap<String, String>,
@@ -191,6 +196,11 @@ impl Theme {
         }
         if self.scheme != "dark" && self.scheme != "light" {
             return Err("scheme must be \"dark\" or \"light\"".into());
+        }
+        if let Some(pair) = &self.pair {
+            if !valid_id(pair) || pair == &self.id {
+                return Err(format!("invalid pair {pair:?}"));
+            }
         }
         for (k, v) in &self.tokens {
             if !THEME_TOKENS.contains(&k.as_str()) {
@@ -305,6 +315,7 @@ mod tests {
             name: "T".into(),
             author: None,
             scheme: "dark".into(),
+            pair: None,
             tokens: tokens.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
             player: None,
         }
@@ -321,6 +332,11 @@ mod tests {
         assert!(theme("x", &[("not-a-token", "red")]).validate().is_err());
         assert!(theme("Bad Id", &[]).validate().is_err());
         assert!(theme("../etc", &[]).validate().is_err());
+        let mut paired = theme("x", &[]);
+        paired.pair = Some("x".into());
+        assert!(paired.validate().is_err(), "can't pair with itself");
+        paired.pair = Some("x-light".into());
+        assert!(paired.validate().is_ok());
     }
 
     #[test]
