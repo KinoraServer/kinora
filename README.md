@@ -98,7 +98,8 @@ Tests:
 
 ```bash
 cargo test --workspace     # Rust: pure logic, snapshot tests, API tests
-cd web && pnpm test        # web: Vitest
+cd web && pnpm test        # web: Vitest unit tests + every Storybook story in headless Chromium
+cd web && pnpm storybook   # web components on phones, tablets and TVs: see docs/storybook.md
 ```
 
 ### Layout
@@ -111,7 +112,7 @@ crates/server/      the binary: HTTP API (axum), SQLite (sqlx), scanner,
                     transcoder, hardware detection, built-in modules
 web/                React + Tailwind web app (Vite)
 packaging/          Unraid template
-docs/               plan, decisions, theme guide
+docs/               plan, decisions, theme guide, Storybook guide
 ```
 
 Most behaviour lives in `crates/core` as plain functions, so it's tested

@@ -1,0 +1,354 @@
+// Made-up data for stories. Nothing here talks to a server.
+
+import type { PlayerInfo } from "@/lib/playback-stats";
+import type { ItemCard, Library, SystemInfo, Theme, User } from "@/lib/types";
+
+/** The server's built-in themes (copied from crates/server/src/modules/themes.rs). */
+export const builtinThemes: Theme[] = [
+  {
+    id: "kinora",
+    name: "Kinora",
+    author: "Built-in",
+    scheme: "dark",
+    tokens: {
+      background: "#0B1612",
+      foreground: "#ECF7F1",
+      card: "#13221C",
+      "card-foreground": "#ECF7F1",
+      muted: "#1C2E26",
+      "muted-foreground": "#8FA79B",
+      primary: "#2BD48F",
+      "primary-foreground": "#04140D",
+      accent: "#1A3328",
+      "accent-foreground": "#ECF7F1",
+      border: "#22382E",
+      ring: "#2BD48F",
+      destructive: "#F2555A",
+      radius: "0.75rem",
+      "font-sans": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    },
+    player: null,
+  },
+  {
+    id: "kinora-light",
+    name: "Kinora Light",
+    author: "Built-in",
+    scheme: "light",
+    tokens: {
+      background: "#F5FAF7",
+      foreground: "#0B1612",
+      card: "#FFFFFF",
+      "card-foreground": "#0B1612",
+      muted: "#E6F0EA",
+      "muted-foreground": "#4F685C",
+      primary: "#0A7F50",
+      "primary-foreground": "#FFFFFF",
+      accent: "#DDEFE5",
+      "accent-foreground": "#0B1612",
+      border: "#D3E3DA",
+      ring: "#0A7F50",
+      destructive: "#C9353A",
+      radius: "0.75rem",
+      "font-sans": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    },
+    player: null,
+  },
+  {
+    id: "midnight",
+    name: "Midnight",
+    author: "Built-in",
+    scheme: "dark",
+    tokens: {
+      background: "oklch(0.16 0.01 260)",
+      foreground: "oklch(0.97 0 0)",
+      card: "oklch(0.21 0.012 260)",
+      "card-foreground": "oklch(0.97 0 0)",
+      muted: "oklch(0.27 0.012 260)",
+      "muted-foreground": "oklch(0.72 0.01 260)",
+      primary: "oklch(0.72 0.16 250)",
+      "primary-foreground": "oklch(0.15 0.02 250)",
+      accent: "oklch(0.3 0.03 260)",
+      "accent-foreground": "oklch(0.97 0 0)",
+      border: "oklch(0.3 0.012 260)",
+      ring: "oklch(0.72 0.16 250)",
+      destructive: "oklch(0.63 0.21 25)",
+      radius: "0.75rem",
+      "font-sans": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    },
+    player: null,
+  },
+  {
+    id: "oled",
+    name: "OLED Black",
+    author: "Built-in",
+    scheme: "dark",
+    tokens: {
+      background: "oklch(0 0 0)",
+      foreground: "oklch(0.96 0 0)",
+      card: "oklch(0.13 0 0)",
+      "card-foreground": "oklch(0.96 0 0)",
+      muted: "oklch(0.2 0 0)",
+      "muted-foreground": "oklch(0.68 0 0)",
+      primary: "oklch(0.96 0 0)",
+      "primary-foreground": "oklch(0 0 0)",
+      accent: "oklch(0.22 0 0)",
+      "accent-foreground": "oklch(0.96 0 0)",
+      border: "oklch(0.24 0 0)",
+      ring: "oklch(0.8 0 0)",
+      destructive: "oklch(0.63 0.21 25)",
+      radius: "0.5rem",
+      "font-sans": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    },
+    player: null,
+  },
+  {
+    id: "ember",
+    name: "Ember",
+    author: "Built-in",
+    scheme: "dark",
+    tokens: {
+      background: "oklch(0.17 0.015 40)",
+      foreground: "oklch(0.96 0.01 70)",
+      card: "oklch(0.22 0.02 40)",
+      "card-foreground": "oklch(0.96 0.01 70)",
+      muted: "oklch(0.28 0.02 40)",
+      "muted-foreground": "oklch(0.74 0.03 60)",
+      primary: "oklch(0.74 0.17 55)",
+      "primary-foreground": "oklch(0.18 0.03 40)",
+      accent: "oklch(0.32 0.04 40)",
+      "accent-foreground": "oklch(0.96 0.01 70)",
+      border: "oklch(0.32 0.025 40)",
+      ring: "oklch(0.74 0.17 55)",
+      destructive: "oklch(0.63 0.21 25)",
+      radius: "1rem",
+      "font-sans": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    },
+    player: null,
+  },
+  {
+    id: "daylight",
+    name: "Daylight",
+    author: "Built-in",
+    scheme: "light",
+    tokens: {
+      background: "oklch(0.985 0.002 260)",
+      foreground: "oklch(0.2 0.015 260)",
+      card: "oklch(1 0 0)",
+      "card-foreground": "oklch(0.2 0.015 260)",
+      muted: "oklch(0.95 0.005 260)",
+      "muted-foreground": "oklch(0.48 0.015 260)",
+      primary: "oklch(0.55 0.18 255)",
+      "primary-foreground": "oklch(0.99 0 0)",
+      accent: "oklch(0.93 0.01 260)",
+      "accent-foreground": "oklch(0.2 0.015 260)",
+      border: "oklch(0.9 0.006 260)",
+      ring: "oklch(0.55 0.18 255)",
+      destructive: "oklch(0.58 0.22 25)",
+      radius: "0.75rem",
+      "font-sans": "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    },
+    player: null,
+  },
+];
+
+export const demoSystemInfo: SystemInfo = {
+  name: "Kinora",
+  version: "0.1.0",
+  server_name: "Kinora",
+  setup_required: false,
+};
+
+export const demoUser: User = { id: "u1", username: "lan", role: "owner" };
+
+export const demoLibraries: Library[] = [
+  {
+    id: "lib-movies",
+    name: "Movies",
+    kind: "movies",
+    paths: ["/media/movies"],
+    created_at: 0,
+    last_scan_at: null,
+    item_count: 412,
+    scan: null,
+  },
+  {
+    id: "lib-tv",
+    name: "TV Shows",
+    kind: "tv",
+    paths: ["/media/tv"],
+    created_at: 0,
+    last_scan_at: null,
+    item_count: 58,
+    scan: null,
+  },
+  {
+    id: "lib-anime",
+    name: "Anime",
+    kind: "tv",
+    paths: ["/media/anime"],
+    created_at: 0,
+    last_scan_at: null,
+    item_count: 31,
+    scan: null,
+  },
+];
+
+const card = (over: Partial<ItemCard> & Pick<ItemCard, "id" | "title" | "kind">): ItemCard => ({
+  library_id: "lib-movies",
+  parent_id: null,
+  series_id: null,
+  year: null,
+  season_number: null,
+  episode_number: null,
+  series_title: null,
+  has_poster: false,
+  has_backdrop: false,
+  has_thumb: false,
+  duration_ms: null,
+  position_ms: null,
+  played: null,
+  rating: null,
+  ...over,
+});
+
+export const demoMovies: ItemCard[] = [
+  card({ id: "m1", kind: "movie", title: "The Long Drive Home", year: 2024 }),
+  card({ id: "m2", kind: "movie", title: "Northern Lights", year: 2019, played: true }),
+  card({ id: "m3", kind: "movie", title: "A Very Long Title That Needs To Be Cut Off Somewhere", year: 2021 }),
+  card({ id: "m4", kind: "movie", title: "Orbit", year: 2023, duration_ms: 7_200_000, position_ms: 2_700_000 }),
+  card({ id: "m5", kind: "movie", title: "Quiet Harbour", year: 2018 }),
+  card({ id: "m6", kind: "movie", title: "Ember", year: 2022 }),
+  card({ id: "m7", kind: "movie", title: "Static", year: 2020 }),
+];
+
+export const demoEpisodes: ItemCard[] = [
+  card({
+    id: "e1",
+    kind: "episode",
+    title: "The Arrival",
+    series_title: "Signal",
+    season_number: 1,
+    episode_number: 1,
+    duration_ms: 2_640_000,
+    position_ms: 1_200_000,
+  }),
+  card({
+    id: "e2",
+    kind: "episode",
+    title: "Crosswind",
+    series_title: "Harbour Lights",
+    season_number: 3,
+    episode_number: 12,
+    duration_ms: 3_000_000,
+    position_ms: 2_500_000,
+  }),
+  card({ id: "e3", kind: "episode", title: "Pilot", series_title: "Static", season_number: 1, episode_number: 1 }),
+];
+
+/** What the info panel shows for a 4K HDR file being transcoded for this browser. */
+export const demoPlayerInfo: PlayerInfo = {
+  basic: [
+    {
+      title: "Video",
+      icon: "video",
+      rows: [
+        ["Codec", "HEVC → H.264"],
+        ["Profile", "Main 10"],
+        ["Resolution", "3840×2160 → 1920×1080"],
+        ["FPS", "23.976"],
+        ["Dynamic range", "HDR10 · 10-bit"],
+        ["Aspect", "2.39:1"],
+      ],
+    },
+    {
+      title: "Audio",
+      icon: "audio",
+      rows: [
+        ["Codec", "TrueHD → AAC"],
+        ["Channels", "7.1 → 2ch"],
+        ["Sample rate", "48.0 kHz"],
+        ["Bitrate", "–"],
+        ["Language", "ENG"],
+      ],
+    },
+    {
+      title: "Color",
+      icon: "color",
+      rows: [
+        ["Pixel format", "yuv420p10le"],
+        ["Matrix", "bt2020nc"],
+        ["Primaries", "bt2020"],
+        ["Transfer", "smpte2084"],
+        ["Range", "limited (tv)"],
+      ],
+    },
+    {
+      title: "Performance",
+      icon: "performance",
+      rows: [
+        ["Render FPS", "23.98"],
+        ["Dropped frames", "3 of 41872"],
+        ["Stalls", "1 (2.4 s)"],
+        ["Speed", "1×"],
+      ],
+    },
+    {
+      title: "Buffer",
+      icon: "buffer",
+      rows: [
+        ["Buffered ahead", "31.5 s"],
+        ["Download speed", "84 Mbps"],
+        ["Stream bitrate", "12 Mbps"],
+        ["Data loaded", "1.2 GB"],
+      ],
+    },
+    {
+      title: "App",
+      icon: "app",
+      rows: [
+        ["Player", "Kinora web · hls.js 1.7.4"],
+        ["Play method", "Transcoding"],
+        ["Transcoder", "NVIDIA NVENC"],
+        ["Memory", "182 MB"],
+        ["Subtitles", "English (SRT)"],
+      ],
+    },
+  ],
+  trace: [
+    {
+      title: "Session",
+      icon: "server",
+      rows: [
+        ["Session id", "c7a1e2f0-4b0e-4c55-9d1e-2f7b8a91c3d4"],
+        ["Started", "21:04:11"],
+        ["Reasons", "video codec hevc not supported, audio codec truehd not supported"],
+      ],
+    },
+    {
+      title: "Transcoder",
+      icon: "server",
+      rows: [
+        ["Status", "running"],
+        ["Speed", "3.4×"],
+        ["Segments ready", "214"],
+      ],
+    },
+    {
+      title: "Recent segments",
+      icon: "list",
+      rows: [
+        ["#212", "1.4 MB in 120 ms"],
+        ["#213", "1.6 MB in 131 ms"],
+        ["#214", "1.5 MB in 118 ms"],
+      ],
+    },
+    { title: "Errors and warnings", icon: "list", rows: [["–", "none"]] },
+  ],
+};
+
+/** Subtitle lines shown over the video in the player stories. */
+export const demoCues = {
+  short: "Where are we going?",
+  long: "I told you already, we follow the river until it meets the sea, and then we keep walking along the coast.",
+  styled: "<i>(distant thunder)</i>\nGet inside, <b>now</b>.",
+};

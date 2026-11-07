@@ -4,3 +4,8 @@ node_modules
 /dev-config
 /dev-media
 .env
+/web/storybook-static
+/web/coverage
+/web/.vitest
+# Linux screenshots come from CI (web-screenshots artifact); commit your own OS's baselines.
+/web/src/**/__screenshots__/**/*-linux.png
