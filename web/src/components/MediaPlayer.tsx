@@ -658,7 +658,8 @@ function MenuButton({
   return (
     <div data-menu className="pointer-events-auto relative">
       <IconBtn
-        label={label}
+        // With visible text (Pro layout) the name must include it, so voice control ("click English") works.
+        label={text ? `${label}: ${text}` : label}
         active={open}
         onClick={() => c.a.setOpenMenu(open ? null : id)}
         className={text ? "h-9 px-2.5 text-sm" : "h-10 w-10"}
@@ -912,7 +913,11 @@ function InfoPanel({ c }: { c: Ctx }) {
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="overflow-y-auto overscroll-contain p-4">
+      {/* Focusable so a keyboard or TV remote can scroll it when it doesn't fit. */}
+      <div
+        tabIndex={0}
+        className="overflow-y-auto overscroll-contain p-4 focus-visible:outline-2 focus-visible:outline-ring"
+      >
         {tab === "basic" || info.trace.length === 0 ? (
           <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
             {info.basic.map((sec) => (
