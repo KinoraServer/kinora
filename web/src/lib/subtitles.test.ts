@@ -42,28 +42,34 @@ describe("pickSubtitle", () => {
 
 describe("subtitle offset", () => {
   it("moves one step per press and stays on screen", () => {
-    expect(nudgeSubtitleOffset({ x: 0, y: 0 }, 0, 1)).toEqual({ x: 0, y: 1 });
-    expect(nudgeSubtitleOffset({ x: 40, y: 80 }, 1, 1)).toEqual({ x: 40, y: 80 });
-    expect(nudgeSubtitleOffset({ x: -40, y: -5 }, -1, -1)).toEqual({ x: -40, y: -5 });
+    expect(nudgeSubtitleOffset(0, 1)).toBe(1);
+    expect(nudgeSubtitleOffset(80, 1)).toBe(80);
+    expect(nudgeSubtitleOffset(-5, -1)).toBe(-5);
   });
 
   it("cleans up bad values", () => {
-    expect(clampSubtitleOffset({ x: Number.NaN, y: 2.6 })).toEqual({ x: 0, y: 3 });
-    expect(Object.is(clampSubtitleOffset({ x: -0.2, y: 0 }).x, 0)).toBe(true);
+    expect(clampSubtitleOffset(Number.NaN)).toBe(0);
+    expect(clampSubtitleOffset(2.6)).toBe(3);
+    expect(Object.is(clampSubtitleOffset(-0.2), 0)).toBe(true);
   });
 
   it("describes the position", () => {
-    expect(describeSubtitleOffset({ x: 0, y: 0 })).toBe("Default position");
-    expect(describeSubtitleOffset({ x: -2, y: 3 })).toBe("Up 3% · Left 2%");
-    expect(describeSubtitleOffset({ x: 4, y: -1 })).toBe("Down 1% · Right 4%");
+    expect(describeSubtitleOffset(0)).toBe("Default position");
+    expect(describeSubtitleOffset(3)).toBe("Up 3%");
+    expect(describeSubtitleOffset(-1)).toBe("Down 1%");
   });
 
   it("round-trips through storage and ignores junk", () => {
-    saveSubtitleOffset({ x: 5, y: 10 });
-    expect(readSubtitleOffset()).toEqual({ x: 5, y: 10 });
+    saveSubtitleOffset(10);
+    expect(readSubtitleOffset()).toBe(10);
     localStorage.setItem("kinora.subtitle-offset", "{nope");
-    expect(readSubtitleOffset()).toEqual({ x: 0, y: 0 });
-    localStorage.setItem("kinora.subtitle-offset", JSON.stringify({ x: 999, y: "7" }));
-    expect(readSubtitleOffset()).toEqual({ x: 40, y: 7 });
+    expect(readSubtitleOffset()).toBe(0);
+    localStorage.setItem("kinora.subtitle-offset", "999");
+    expect(readSubtitleOffset()).toBe(80);
+  });
+
+  it("keeps the height from the old {x, y} format", () => {
+    localStorage.setItem("kinora.subtitle-offset", JSON.stringify({ x: 12, y: 7 }));
+    expect(readSubtitleOffset()).toBe(7);
   });
 });

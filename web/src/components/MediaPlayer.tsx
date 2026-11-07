@@ -8,7 +8,7 @@
 //                             arrange the shared controls, so every layout has
 //                             exactly the same features.
 //      Subtitles     - drawn by us (not the browser) so they can sit above
-//                             the controls and be moved with the D-pad panel.
+//                             the controls and be moved up or down from a small panel.
 //   4. Custom skins         - admin-installed markup + CSS, sanitised here and
 //                             wired to the controller with data-kn-* attributes.
 //   5. MediaPlayer          - picks the layout and renders it over the video.
@@ -21,14 +21,12 @@ import {
   AudioLines,
   Captions,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Gauge,
   Info,
   Maximize,
   Minimize,
-  Move,
+  MoveVertical,
   Pause,
   PictureInPicture2,
   Play,
@@ -127,11 +125,11 @@ export interface PlayerState {
   controlsVisible: boolean;
   infoOpen: boolean;
   openMenu: string | null;
-  /** The viewer's subtitle nudge (see lib/subtitles.ts). */
+  /** How far the viewer moved the subtitles up or down (see lib/subtitles.ts). */
   subtitleOffset: SubtitleOffset;
 }
 
-/** `openMenu` id of the subtitle position (D-pad) panel. */
+/** `openMenu` id of the subtitle position panel. */
 export const SUBTITLE_PANEL = "subtitle-position";
 
 export interface PlayerActions {
@@ -146,8 +144,8 @@ export interface PlayerActions {
   toggleInfo: () => void;
   setOpenMenu: (id: string | null) => void;
   setScrubbing: (scrubbing: boolean) => void;
-  /** Move the subtitles by whole percent steps (+x right, +y up). Saved on this device. */
-  nudgeSubtitles: (dx: number, dy: number) => void;
+  /** Move the subtitles up (+) or down (-) by whole percent steps. Saved on this device. */
+  nudgeSubtitles: (dy: number) => void;
   resetSubtitles: () => void;
   toggleSubtitlePanel: () => void;
   /** Show the controls and restart the auto-hide timer. */
@@ -324,7 +322,7 @@ function usePlayerController(
       toggleInfo: () => setInfoOpen((o) => !o),
       setOpenMenu,
       setScrubbing,
-      nudgeSubtitles: (dx, dy) => moveSubtitles((o) => nudgeSubtitleOffset(o, dx, dy)),
+      nudgeSubtitles: (dy) => moveSubtitles((o) => nudgeSubtitleOffset(o, dy)),
       resetSubtitles: () => moveSubtitles(() => NO_OFFSET),
       toggleSubtitlePanel: () => setOpenMenu((m) => (m === SUBTITLE_PANEL ? null : SUBTITLE_PANEL)),
       poke,
@@ -339,20 +337,20 @@ function usePlayerController(
     poke();
   };
   const volumeBy = (delta: number) => () => actions.setVolume((videoRef.current?.volume ?? 1) + delta);
-  // While the subtitle panel is open the arrow keys (and a TV remote's D-pad)
-  // move the subtitles instead of seeking and changing the volume.
+  // While the subtitle panel is open, Up/Down (and a TV remote's D-pad) move the
+  // subtitles instead of changing the volume. Left/Right still seek.
   const positioning = openMenu === SUBTITLE_PANEL;
-  const arrow = (normal: () => void, dx: number, dy: number) =>
-    run(() => (positioning ? actions.nudgeSubtitles(dx * SUBTITLE_STEP, dy * SUBTITLE_STEP) : normal()));
+  const vertical = (normal: () => void, dy: number) =>
+    run(() => (positioning ? actions.nudgeSubtitles(dy * SUBTITLE_STEP) : normal()));
   useHotkeys([
     { hotkey: "Space", callback: run(actions.toggle) },
     { hotkey: "K", callback: run(actions.toggle) },
-    { hotkey: "ArrowLeft", callback: arrow(() => actions.skip(-5), -1, 0) },
-    { hotkey: "ArrowRight", callback: arrow(() => actions.skip(5), 1, 0) },
+    { hotkey: "ArrowLeft", callback: run(() => actions.skip(-5)) },
+    { hotkey: "ArrowRight", callback: run(() => actions.skip(5)) },
     { hotkey: "J", callback: run(() => actions.skip(-10)) },
     { hotkey: "L", callback: run(() => actions.skip(10)) },
-    { hotkey: "ArrowUp", callback: arrow(volumeBy(0.1), 0, 1) },
-    { hotkey: "ArrowDown", callback: arrow(volumeBy(-0.1), 0, -1) },
+    { hotkey: "ArrowUp", callback: vertical(volumeBy(0.1), 1) },
+    { hotkey: "ArrowDown", callback: vertical(volumeBy(-0.1), -1) },
     { hotkey: "M", callback: run(actions.toggleMute) },
     { hotkey: "F", callback: run(actions.toggleFullscreen) },
     { hotkey: "I", callback: run(actions.toggleInfo) },
@@ -726,7 +724,7 @@ function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
             active={s.openMenu === SUBTITLE_PANEL}
             className={labelled ? "h-9 w-9" : "h-10 w-10"}
           >
-            <Move className="h-5 w-5" />
+            <MoveVertical className="h-5 w-5" />
           </IconBtn>
         </div>
       )}
@@ -927,7 +925,7 @@ const LAYOUTS: Record<string, (props: { c: Ctx }) => ReactNode> = {
 };
 
 // ---------------------------------------------------------------------------
-// Subtitles: drawn above the controls, moved with a D-pad panel
+// Subtitles: drawn above the controls, moved up or down with a small panel
 // ---------------------------------------------------------------------------
 
 /** Space between the subtitles (or the panel) and the top of the controls bar, in px. */
@@ -1021,11 +1019,12 @@ function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[];
   return (
     <div
       aria-live="off"
-      className="pointer-events-none absolute z-[5] flex w-max max-w-[90%] -translate-x-1/2 flex-col items-center gap-1 text-center transition-[bottom] duration-300"
+      // Spans the width minus a 5% margin each side and stays centred, so a long
+      // line wraps onto the next line instead of running off the screen.
+      className="pointer-events-none absolute inset-x-[5%] z-[5] flex flex-col items-center gap-1 text-center transition-[bottom] duration-300"
       style={{
-        left: `calc(50% + ${o.x}%)`,
         // Near the bottom edge, or just above the bar while the controls show, then the viewer's nudge.
-        bottom: `calc(max(${SUBTITLE_BASE}%, ${lift}px) + ${o.y}%)`,
+        bottom: `calc(max(${SUBTITLE_BASE}%, ${lift}px) + ${o}%)`,
         fontSize: "clamp(1rem, 0.6rem + 1.9vw, 2.75rem)",
         lineHeight: 1.3,
       }}
@@ -1035,7 +1034,7 @@ function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[];
           <p
             // Cues have no stable id; their start time + position in the list is unique enough.
             key={`${cue.startTime}-${i}`}
-            className="rounded-md bg-black/60 px-[0.4em] py-[0.1em] text-white [box-decoration-break:clone] [text-shadow:0_1px_3px_rgb(0_0_0/0.9)]"
+            className="max-w-full rounded-md bg-black/60 px-[0.4em] py-[0.1em] [overflow-wrap:anywhere] text-white [box-decoration-break:clone] [text-shadow:0_1px_3px_rgb(0_0_0/0.9)]"
           >
             <CueText cue={cue} />
           </p>
@@ -1049,14 +1048,14 @@ function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[];
   );
 }
 
-/** The D-pad: nudge the subtitles a step at a time, or put them back. */
+/** Up/down buttons: nudge the subtitles a step at a time, or put them back. */
 function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
   const { s, a } = c;
   const o = s.subtitleOffset;
   const btn =
     "flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40";
-  const step = (dx: number, dy: number) => () => {
-    a.nudgeSubtitles(dx * SUBTITLE_STEP, dy * SUBTITLE_STEP);
+  const step = (dy: number) => () => {
+    a.nudgeSubtitles(dy * SUBTITLE_STEP);
     a.poke();
   };
   return (
@@ -1064,7 +1063,7 @@ function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
       data-menu
       role="group"
       aria-label="Subtitle position"
-      className="pointer-events-auto absolute right-4 z-20 w-60 rounded-xl border border-white/10 bg-black/85 p-4 text-sm text-white shadow-2xl"
+      className="pointer-events-auto absolute right-4 z-20 w-56 rounded-xl border border-white/10 bg-black/85 p-4 text-sm text-white shadow-2xl"
       style={{ bottom: barHeight + BAR_GAP, backdropFilter: "blur(var(--kn-player-bar-blur))" }}
     >
       <div className="mb-3 flex items-center justify-between">
@@ -1078,14 +1077,9 @@ function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="mx-auto grid w-max grid-cols-3 gap-1.5">
-        <span />
-        <button type="button" aria-label="Move subtitles up" className={btn} onClick={step(0, 1)}>
+      <div className="mx-auto flex w-max flex-col items-center gap-1.5">
+        <button type="button" aria-label="Move subtitles up" className={btn} onClick={step(1)}>
           <ChevronUp className="h-5 w-5" />
-        </button>
-        <span />
-        <button type="button" aria-label="Move subtitles left" className={btn} onClick={step(-1, 0)}>
-          <ChevronLeft className="h-5 w-5" />
         </button>
         <button
           type="button"
@@ -1093,23 +1087,20 @@ function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
           title="Reset"
           className={cn(btn, "bg-primary/25 hover:bg-primary/40")}
           onClick={a.resetSubtitles}
-          disabled={o.x === 0 && o.y === 0}
+          disabled={o === 0}
         >
           <RotateCcw className="h-4 w-4" />
         </button>
-        <button type="button" aria-label="Move subtitles right" className={btn} onClick={step(1, 0)}>
-          <ChevronRight className="h-5 w-5" />
-        </button>
-        <span />
-        <button type="button" aria-label="Move subtitles down" className={btn} onClick={step(0, -1)}>
+        <button type="button" aria-label="Move subtitles down" className={btn} onClick={step(-1)}>
           <ChevronDown className="h-5 w-5" />
         </button>
-        <span />
       </div>
       <p className="mt-3 text-center tabular-nums text-white/80" aria-live="polite">
         {describeSubtitleOffset(o)}
       </p>
-      <p className="mt-1 text-center text-xs text-white/50">Arrow keys move them too. Saved on this device.</p>
+      <p className="mt-1 text-center text-xs text-white/50">
+        The up and down arrow keys move them too. Saved on this device.
+      </p>
     </div>
   );
 }
