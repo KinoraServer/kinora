@@ -17,15 +17,21 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import app.kinora.api.KinoraApi
+import app.kinora.model.AutoTracks.Companion.NO_OPINION
 import app.kinora.model.ItemDetail
 import app.kinora.model.PlaybackMethod
 import app.kinora.model.PlaybackRequest
 import app.kinora.model.PlaybackStart
 import app.kinora.model.ProgressUpdate
 import app.kinora.model.StopRequest
+import app.kinora.model.TrackChoice
+import app.kinora.model.audioIndexAt
 import app.kinora.model.audioLabel
+import app.kinora.model.audioPosition
 import app.kinora.model.episodeLabel
 import app.kinora.model.languageName
+import app.kinora.model.subtitleIndexAt
+import app.kinora.model.subtitlePosition
 import app.kinora.playback.PlayerFactory
 import app.kinora.tv.container
 import kotlinx.coroutines.Job
@@ -81,6 +87,14 @@ class PlayerViewModel(
     private var lastSavedMs = -1L
     private var ticker: Job? = null
 
+    // Tracks to select once the player lists them (server stream indexes). They come from the
+    // server's remembered choice for this show (module "auto-tracks"), or from what the viewer
+    // picked before the stream restarted. NO_OPINION: leave it to the player; null subtitle: off.
+    private var pendingAudio: Int? = null
+    private var pendingSubtitle: Int? = NO_OPINION
+    /** The viewer's own subtitle pick while this player is open, kept when the stream restarts. */
+    private var chosenSubtitle: Int? = NO_OPINION
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _state.update { it.copy(playing = isPlaying) }
@@ -133,6 +147,14 @@ class PlayerViewModel(
             stopServerSession()
             val playback = api.startPlayback(file.id, PlaybackRequest(container.caps(), audioIndex = audioIndex, forceTranscode = forceTranscode))
             start = playback
+            val auto = playback.autoTracks
+            pendingSubtitle = when {
+                chosenSubtitle != NO_OPINION -> chosenSubtitle
+                auto != null -> auto.subtitleIndex // null here means off
+                else -> NO_OPINION
+            }
+            // A server stream already carries the picked audio; during direct play the player picks, so tell it.
+            pendingAudio = if (playback.method == PlaybackMethod.DirectPlay) auto?.audioIndex else null
 
             val builder = MediaItem.Builder().setUri(api.resolve(playback.url).toString())
             if (playback.method != PlaybackMethod.DirectPlay) {
@@ -201,6 +223,16 @@ class PlayerViewModel(
                 .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
         }
         player.trackSelectionParameters = params.build()
+
+        // The new selection isn't reflected in currentTracks yet, so map the menu key itself.
+        val sub = if (key == OFF) {
+            null
+        } else {
+            val position = key.removePrefix("track-").toIntOrNull() ?: return
+            subtitleIndexAt(start?.subtitles.orEmpty(), trackIds(textGroups()), position) ?: return
+        }
+        chosenSubtitle = sub
+        remember(currentAudioIndex(), sub)
     }
 
     fun selectAudio(key: String) {
@@ -210,10 +242,16 @@ class PlayerViewModel(
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
                 .build()
+            val position = key.removePrefix("track-").toIntOrNull() ?: return
+            val audio = audioIndexAt(fileAudio(), audioGroups().size, position) ?: return
+            remember(audio, currentSubtitleIndex())
         } else {
             // A stream from the server carries one audio track, so switching restarts it with the new one.
             val index = key.removePrefix("server-").toIntOrNull() ?: return
             if (index == s.plan.audioIndex) return
+            // Keep the subtitle that's showing on the restarted stream.
+            currentSubtitleIndex().let { if (it != NO_OPINION) chosenSubtitle = it }
+            remember(index, chosenSubtitle)
             viewModelScope.launch { load(startMs = player.currentPosition, audioIndex = index, forceTranscode = false) }
         }
     }
@@ -221,7 +259,64 @@ class PlayerViewModel(
     private fun groupFor(type: Int, key: String): Tracks.Group? =
         player.currentTracks.groups.filter { it.type == type }.getOrNull(key.removePrefix("track-").toIntOrNull() ?: -1)
 
+    private fun textGroups() = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+    private fun audioGroups() = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+    private fun trackIds(groups: List<Tracks.Group>) = groups.map { it.mediaTrackGroup.getFormat(0).id }
+    private fun fileAudio() = item?.files?.firstOrNull()?.info?.audio.orEmpty()
+
+    /** Server index of the subtitle showing now; null when off, NO_OPINION when it can't be told. */
+    private fun currentSubtitleIndex(): Int? {
+        val s = start ?: return NO_OPINION
+        val text = textGroups()
+        val position = text.indexOfFirst { it.isSelected }
+        if (C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes || position < 0) return null
+        return subtitleIndexAt(s.subtitles, trackIds(text), position) ?: NO_OPINION
+    }
+
+    /** Server index of the audio playing now. */
+    private fun currentAudioIndex(): Int? {
+        val s = start ?: return null
+        if (s.method != PlaybackMethod.DirectPlay) return s.plan.audioIndex
+        val audio = audioGroups()
+        val position = audio.indexOfFirst { it.isSelected }
+        return audioIndexAt(fileAudio(), audio.size, position) ?: s.plan.audioIndex
+    }
+
+    /** Tell the server what the viewer picked, so other episodes (and the web app) start with it. */
+    private fun remember(audio: Int?, subtitle: Int?) {
+        val fileId = item?.files?.firstOrNull()?.id ?: return
+        if (subtitle == NO_OPINION) return
+        container.appScope.launch { runCatching { api.rememberTracks(fileId, TrackChoice(audio, subtitle)) } }
+    }
+
+    /** Select the pending tracks once the player has listed the file's tracks. */
+    private fun applyPending() {
+        val s = start ?: return
+        if (player.currentTracks.groups.isEmpty()) return
+        if (pendingAudio == null && pendingSubtitle == NO_OPINION) return
+        val params = player.trackSelectionParameters.buildUpon()
+        pendingAudio?.let { index ->
+            val audio = audioGroups()
+            audioPosition(fileAudio(), audio.size, index)?.let { params.setOverrideForType(TrackSelectionOverride(audio[it].mediaTrackGroup, 0)) }
+        }
+        when (val sub = pendingSubtitle) {
+            NO_OPINION -> Unit
+            null -> params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            else -> {
+                val text = textGroups()
+                subtitlePosition(s.subtitles, trackIds(text), sub)?.let {
+                    params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(text[it].mediaTrackGroup, 0))
+                }
+            }
+        }
+        pendingAudio = null
+        pendingSubtitle = NO_OPINION
+        player.trackSelectionParameters = params.build()
+    }
+
     private fun refreshTracks() {
+        applyPending()
         val tracks = player.currentTracks
         val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         val textDisabled = C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes
