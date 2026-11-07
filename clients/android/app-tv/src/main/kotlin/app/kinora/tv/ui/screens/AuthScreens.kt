@@ -23,9 +23,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import app.kinora.tv.ui.components.Button
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
+import app.kinora.tv.ui.components.OutlinedButton
 import androidx.tv.material3.Text
 import app.kinora.api.ApiException
 import app.kinora.model.isPlainHttp
@@ -35,6 +35,7 @@ import app.kinora.tv.data.Session
 import app.kinora.tv.ui.components.TvTextField
 import kotlinx.coroutines.launch
 import java.io.IOException
+import app.kinora.tv.ui.components.KinoraLogo
 
 /** Step 1: which server? */
 @Composable
@@ -167,7 +168,7 @@ fun SignInScreen(onSignedIn: () -> Unit, onChangeServer: () -> Unit) {
 @Composable
 private fun AuthLayout(title: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 96.dp, vertical = 64.dp)) {
-        Text("kinora", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+        KinoraLogo(height = 48.dp)
         Spacer(Modifier.height(32.dp))
         Text(title, style = MaterialTheme.typography.displaySmall)
         Spacer(Modifier.height(32.dp))

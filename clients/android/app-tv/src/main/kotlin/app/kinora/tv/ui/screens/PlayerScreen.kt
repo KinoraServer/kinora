@@ -49,9 +49,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.ui.PlayerView
-import androidx.tv.material3.Button
+import app.kinora.tv.ui.components.Button
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
+import app.kinora.tv.ui.components.OutlinedButton
 import androidx.tv.material3.Text
 import app.kinora.model.formatClock
 import kotlinx.coroutines.delay

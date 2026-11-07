@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,9 +36,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import app.kinora.tv.ui.components.Button
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
+import app.kinora.tv.ui.components.OutlinedButton
 import androidx.tv.material3.Text
 import app.kinora.model.ItemCard
 import app.kinora.model.ItemDetail
@@ -57,6 +55,7 @@ import app.kinora.tv.container
 import app.kinora.tv.ui.components.CenteredMessage
 import app.kinora.tv.ui.components.ItemRow
 import app.kinora.tv.ui.components.ItemTile
+import app.kinora.tv.ui.components.KinoraLogo
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
@@ -87,7 +86,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("kinora", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                    KinoraLogo(height = 40.dp)
                     Spacer(Modifier.width(24.dp))
                     libraries.forEachIndexed { i, lib ->
                         val m = if (i == 0 && nonEmpty.isEmpty()) Modifier.focusRequester(firstFocus) else Modifier
@@ -135,7 +134,7 @@ fun LibraryScreen(libraryId: String, name: String, onOpenItem: (ItemCard) -> Uni
                 if (id == sort) Button(onClick = {}) { Text(label) } else OutlinedButton(onClick = { sort = id }) { Text(label) }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(8.dp))
         LoadContent(loader, onSignOut) { items ->
             LaunchedEffect(items) { runCatching { firstFocus.requestFocus() } }
             if (items.isEmpty()) {
@@ -143,7 +142,8 @@ fun LibraryScreen(libraryId: String, name: String, onOpenItem: (ItemCard) -> Uni
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(150.dp),
-                    contentPadding = PaddingValues(start = 48.dp, end = 48.dp, bottom = 48.dp),
+                    // Room above the first row so a focused (enlarged) tile isn't clipped.
+                    contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 16.dp, bottom = 48.dp),
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
@@ -320,8 +320,9 @@ fun SettingsScreen(onChangeServer: () -> Unit, onSignedOut: () -> Unit) {
         SettingLine("This TV can play", caps)
         SettingLine("App version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         Spacer(Modifier.height(24.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(listOf("Sign out", "Change server")) { label ->
+        // A plain Row: a LazyRow clips its children, which cut off the sides of a focused (enlarged) button.
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            listOf("Sign out", "Change server").forEach { label ->
                 val m = if (label == "Sign out") Modifier.focusRequester(firstFocus) else Modifier
                 OutlinedButton(
                     modifier = m,

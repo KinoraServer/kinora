@@ -145,7 +145,7 @@ data class ItemDetail(
     val tagline: String? = null,
     val rating: Double? = null,
     @SerialName("official_rating") val officialRating: String? = null,
-    val genres: List<String> = emptyList(),
+    @Serializable(with = LenientStringList::class) val genres: List<String> = emptyList(),
     @SerialName("runtime_minutes") val runtimeMinutes: Int? = null,
     @SerialName("series_title") val seriesTitle: String? = null,
     @SerialName("has_poster") val hasPoster: Boolean = false,
