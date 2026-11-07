@@ -32,8 +32,37 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      # Unit tests plus every Storybook story (render, interactions, a11y) in headless Chromium.
+      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm build-storybook
+
+  # Screenshots of every "visual" story on each device in web/.storybook/devices.ts,
+  # uploaded as a build artifact so a pull request's look can be checked without
+  # running anything. Nothing is compared here: saved screenshots differ between
+  # operating systems, so comparing is done locally with `pnpm test:visual`.
+  web-screenshots:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:visual --update
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-screenshots-${{ github.run_number }}
+          path: web/src/**/__screenshots__/**
+          if-no-files-found: error
 
   format:
     runs-on: ubuntu-24.04

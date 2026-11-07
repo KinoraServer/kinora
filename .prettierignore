@@ -12,3 +12,5 @@ docs
 **/*.sample
 clients/android/**/build
 clients/android/.gradle
+web/storybook-static
+web/.vitest
