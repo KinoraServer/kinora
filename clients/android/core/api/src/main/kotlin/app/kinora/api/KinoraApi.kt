@@ -12,6 +12,7 @@ import app.kinora.model.PlayedUpdate
 import app.kinora.model.ProgressUpdate
 import app.kinora.model.StopRequest
 import app.kinora.model.SystemInfo
+import app.kinora.model.TrackChoice
 import app.kinora.model.ThemeList
 import app.kinora.model.User
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +111,9 @@ class KinoraApi(
     suspend fun saveProgress(itemId: String, update: ProgressUpdate) = post<Unit, ProgressUpdate>("api/items/$itemId/progress", update)
     suspend fun setPlayed(itemId: String, played: Boolean) = post<Unit, PlayedUpdate>("api/items/$itemId/played", PlayedUpdate(played))
     suspend fun startPlayback(fileId: String, request: PlaybackRequest): PlaybackStart = post("api/playback/$fileId", request)
+    /** Remember the viewer's audio and subtitle choice for this show (module "auto-tracks"). */
+    suspend fun rememberTracks(fileId: String, choice: TrackChoice) =
+        send<Unit>("PUT", "api/playback/$fileId/tracks", json.encodeToString(TrackChoice.serializer(), choice))
     suspend fun stopHls(sessionId: String, stop: StopRequest) =
         send<Unit>("DELETE", "api/hls/$sessionId", json.encodeToString(StopRequest.serializer(), stop))
 

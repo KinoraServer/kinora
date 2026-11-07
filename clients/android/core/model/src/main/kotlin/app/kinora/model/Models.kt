@@ -215,6 +215,29 @@ data class PlaybackStart(
     @SerialName("duration_ms") val durationMs: Long,
     val subtitles: List<SubtitleTrack> = emptyList(),
     val hardware: String = "",
+    /** Tracks the server picked from this viewer's choices on other episodes (module "auto-tracks"). */
+    @SerialName("auto_tracks") val autoTracks: AutoTracks? = null,
+)
+
+/** `auto_tracks` in [PlaybackStart]. Mirrors `kinora_server::modules::auto_tracks::AutoTracks`. */
+@Serializable
+data class AutoTracks(
+    /** "season", "series" or "library": which remembered choice was used. */
+    val from: String,
+    @SerialName("audio_index") val audioIndex: Int? = null,
+    /** [NO_OPINION] when the server sent nothing (the player decides); null means subtitles off. */
+    @SerialName("subtitle_index") val subtitleIndex: Int? = NO_OPINION,
+) {
+    companion object {
+        const val NO_OPINION = -1
+    }
+}
+
+/** `PUT api/playback/{file}/tracks`: what the viewer picked. Null subtitles means off. */
+@Serializable
+data class TrackChoice(
+    @SerialName("audio_index") val audioIndex: Int?,
+    @SerialName("subtitle_index") val subtitleIndex: Int?,
 )
 
 @Serializable

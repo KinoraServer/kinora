@@ -5,6 +5,7 @@ import app.kinora.model.ItemKind
 import app.kinora.model.PlaybackMethod
 import app.kinora.model.PlaybackRequest
 import app.kinora.model.StopRequest
+import app.kinora.model.TrackChoice
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -111,5 +112,15 @@ class KinoraApiTest {
         val req = server.takeRequest()
         assertEquals("DELETE", req.method)
         assertEquals("""{"position_ms":5000,"item_id":"i1"}""", req.body.readUtf8())
+    }
+
+    @Test
+    fun rememberTracksSendsThePick() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+        api.rememberTracks("f1", TrackChoice(audioIndex = 2, subtitleIndex = 5))
+        val req = server.takeRequest()
+        assertEquals("PUT", req.method)
+        assertTrue(req.path!!, req.path!!.endsWith("/api/playback/f1/tracks"))
+        assertEquals("""{"audio_index":2,"subtitle_index":5}""", req.body.readUtf8())
     }
 }
