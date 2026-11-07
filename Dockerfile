@@ -12,6 +12,9 @@ RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
+# The app skin rules and starter skins live with the server and are shared with the web app.
+COPY crates/plugin-api/skin-rules.json /src/crates/plugin-api/skin-rules.json
+COPY crates/server/src/modules/app_skin_samples /src/crates/server/src/modules/app_skin_samples
 RUN pnpm build
 
 # ---- 2. server ----------------------------------------------------------------
