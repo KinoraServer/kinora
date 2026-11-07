@@ -90,7 +90,14 @@ pub async fn list(State(state): State<AppState>, _user: AuthUser) -> Json<Vec<Pl
     if !super::is_enabled(&state.db, "player-skins").await {
         return Json(vec![]);
     }
-    Json(load_custom(&state.config.skins_dir()))
+    let mut skins = load_custom(&state.config.skins_dir());
+    // Players that come with installed app skins.
+    for p in super::app_skins::bundled_players(&state).await {
+        if !skins.iter().any(|s| s.id == p.id) {
+            skins.push(p);
+        }
+    }
+    Json(skins)
 }
 
 /// The player every client uses: "theme", a built-in layout id or a skin id.

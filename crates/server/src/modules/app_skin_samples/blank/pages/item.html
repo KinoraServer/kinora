@@ -1,0 +1,25 @@
+<!-- Any title. Add item.movie.html, item.series.html, item.season.html or item.episode.html for per-kind pages. -->
+<article data-kn-layout="split">
+  <img data-kn-img="poster thumb" data-kn-size="480">
+  <div data-kn-layout="stack">
+    <a data-kn-if="seriesId" data-kn-link="series" data-kn-text="seriesTitle"></a>
+    <h1 data-kn-text="title"></h1>
+    <p><span data-kn-text="episodeCode"></span> <span data-kn-text="episodeTitle"></span></p>
+    <p><span data-kn-text="year"></span> <span data-kn-text="runtimeLabel"></span> <span data-kn-text="genresLabel"></span></p>
+    <div data-kn-layout="row">
+      <button data-kn-if="canPlay" data-kn-action="play" data-kn-text="playLabel" data-kn-focus-default></button>
+      <button data-kn-if="canResume" data-kn-action="restart">From the start</button>
+      <button data-kn-action="toggle-played" data-kn-text="playedLabel"></button>
+    </div>
+    <p data-kn-text="overview"></p>
+  </div>
+</article>
+<section data-kn-if="hasSeasons">
+  <nav data-kn-layout="row" aria-label="Seasons">
+    <a data-kn-each="seasons" data-kn-link="season" data-kn-text="label"></a>
+  </nav>
+</section>
+<section data-kn-if="hasEpisodes" data-kn-layout="grid">
+  <a class="card" data-kn-each="episodes" data-kn-link="play" data-kn-use="card"></a>
+</section>
+<div data-kn-slot="extras"></div>

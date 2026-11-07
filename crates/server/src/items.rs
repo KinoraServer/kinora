@@ -20,6 +20,7 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/home", get(home))
+        .route("/api/home/featured", get(featured))
         .route("/api/items", get(list_items))
         .route("/api/items/{id}", get(item_detail))
         .route("/api/items/{id}/progress", post(progress))
@@ -43,10 +44,14 @@ pub struct ItemCard {
     pub has_poster: bool,
     pub has_backdrop: bool,
     pub has_thumb: bool,
+    /// Title art (a transparent logo), see `images/logo`.
+    pub has_logo: bool,
     pub duration_ms: Option<i64>,
     pub position_ms: Option<i64>,
     pub played: Option<bool>,
     pub rating: Option<f64>,
+    /// When the item was added to the library (Unix ms).
+    pub added_at: i64,
 }
 
 const CARD_SELECT: &str = "
@@ -55,8 +60,9 @@ const CARD_SELECT: &str = "
            (COALESCE(i.poster_url, s.poster_url) IS NOT NULL) AS has_poster,
            (COALESCE(i.backdrop_url, s.backdrop_url) IS NOT NULL) AS has_backdrop,
            (i.thumb_url IS NOT NULL) AS has_thumb,
+           (COALESCE(i.logo_url, s.logo_url) IS NOT NULL) AS has_logo,
            (SELECT MAX(f.duration_ms) FROM media_files f WHERE f.item_id = i.id) AS duration_ms,
-           u.position_ms, (u.played = 1) AS played, i.rating
+           u.position_ms, (u.played = 1) AS played, i.rating, i.added_at
     FROM items i
     LEFT JOIN items s ON s.id = i.series_id
     LEFT JOIN user_item_data u ON u.item_id = i.id AND u.user_id = ?";
@@ -99,6 +105,49 @@ async fn home(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
         }
     }
     Ok(Json(rows))
+}
+
+/// A title for a home page hero: a card plus the text a hero shows.
+#[derive(Serialize)]
+struct FeaturedItem {
+    #[serde(flatten)]
+    card: ItemCard,
+    overview: Option<String>,
+    tagline: Option<String>,
+    official_rating: Option<String>,
+    runtime_minutes: Option<i64>,
+    genres: Vec<String>,
+}
+
+/// Recently added movies and series with a backdrop and a description that
+/// this viewer hasn't watched yet: what app skins show in a home page hero.
+async fn featured(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<FeaturedItem>>> {
+    let cards: Vec<ItemCard> = sqlx::query_as(&format!(
+        "{CARD_SELECT} WHERE i.kind IN ('movie', 'series') AND i.backdrop_url IS NOT NULL
+         AND i.overview IS NOT NULL AND i.overview != '' AND COALESCE(u.played, 0) = 0
+         ORDER BY i.added_at DESC LIMIT 8"
+    ))
+    .bind(&user.id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut out = Vec::with_capacity(cards.len());
+    for card in cards {
+        let extra: (Option<String>, Option<String>, Option<String>, Option<i64>, String) = sqlx::query_as(
+            "SELECT overview, tagline, official_rating, runtime_minutes, genres FROM items WHERE id = ?",
+        )
+        .bind(&card.id)
+        .fetch_one(&state.db)
+        .await?;
+        out.push(FeaturedItem {
+            card,
+            overview: extra.0,
+            tagline: extra.1,
+            official_rating: extra.2,
+            runtime_minutes: extra.3,
+            genres: serde_json::from_str(&extra.4).unwrap_or_default(),
+        });
+    }
+    Ok(Json(out))
 }
 
 #[derive(Deserialize)]
@@ -208,6 +257,7 @@ struct ItemDetail {
     has_poster: bool,
     has_backdrop: bool,
     has_thumb: bool,
+    has_logo: bool,
     files: Vec<MediaFileView>,
     children: Vec<ItemCard>,
     position_ms: i64,
@@ -231,9 +281,10 @@ async fn item_detail(
     .fetch_one(&state.db)
     .await?;
 
-    let images: (Option<String>, bool, bool, bool) = sqlx::query_as(
+    let images: (Option<String>, bool, bool, bool, bool) = sqlx::query_as(
         "SELECT s.title, (COALESCE(i.poster_url, s.poster_url) IS NOT NULL),
-                (COALESCE(i.backdrop_url, s.backdrop_url) IS NOT NULL), (i.thumb_url IS NOT NULL)
+                (COALESCE(i.backdrop_url, s.backdrop_url) IS NOT NULL), (i.thumb_url IS NOT NULL),
+                (COALESCE(i.logo_url, s.logo_url) IS NOT NULL)
          FROM items i LEFT JOIN items s ON s.id = i.series_id WHERE i.id = ?",
     )
     .bind(&id)
@@ -301,6 +352,7 @@ async fn item_detail(
         has_poster: images.1,
         has_backdrop: images.2,
         has_thumb: images.3,
+        has_logo: images.4,
         files,
         children,
         position_ms: ud.map(|u| u.0).unwrap_or(0),
@@ -381,17 +433,41 @@ async fn set_played(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+struct ImageQuery {
+    /// Resize to this width (one of the app skin image widths); the original otherwise.
+    w: Option<u32>,
+}
+
+/// Resizes run through ffmpeg; a few at a time so a page full of cards can't swamp the CPU.
+static RESIZES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+
+fn image_mime(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(b"\x89PNG") {
+        "image/png"
+    } else if bytes.get(8..12) == Some(b"WEBP") {
+        "image/webp"
+    } else if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") {
+        "image/svg+xml"
+    } else {
+        "image/jpeg"
+    }
+}
+
 /// Serve an image, downloading and caching it on first request.
 /// Seasons and episodes fall back to their series' artwork.
+/// `?w=` serves a smaller copy (made once with ffmpeg and cached).
 async fn image(
     State(state): State<AppState>,
     _user: AuthUser,
     Path((id, kind)): Path<(String, String)>,
+    Query(q): Query<ImageQuery>,
 ) -> AppResult<Response> {
     let column = match kind.as_str() {
         "poster" => "COALESCE(i.poster_url, s.poster_url)",
         "backdrop" => "COALESCE(i.backdrop_url, s.backdrop_url)",
         "thumb" => "COALESCE(i.thumb_url, i.backdrop_url, s.backdrop_url)",
+        "logo" => "COALESCE(i.logo_url, s.logo_url)",
         _ => return Err(AppError::NotFound),
     };
     let url: Option<String> = sqlx::query_scalar(&format!(
@@ -404,7 +480,7 @@ async fn image(
 
     let name = hex::encode(&Sha256::digest(url.as_bytes())[..16]);
     let path = state.config.image_cache_dir().join(format!("{name}.img"));
-    let bytes = match tokio::fs::read(&path).await {
+    let mut bytes = match tokio::fs::read(&path).await {
         Ok(b) => b,
         Err(_) => {
             let resp = state.http.get(&url).send().await.map_err(anyhow::Error::from)?;
@@ -417,15 +493,63 @@ async fn image(
             b
         }
     };
-    let mime = if bytes.starts_with(b"\x89PNG") {
-        "image/png"
-    } else if bytes.get(8..12) == Some(b"WEBP") {
-        "image/webp"
-    } else {
-        "image/jpeg"
-    };
-    Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=604800")], Body::from(bytes))
-        .into_response())
+    let mut mime = image_mime(&bytes);
+    let widths = &kinora_plugin_api::app_skin::rules().image_widths;
+    if let Some(w) = q.w.filter(|w| widths.contains(w)) {
+        if mime != "image/svg+xml" {
+            // Logos keep their transparency (PNG); everything else becomes a JPEG.
+            let png = mime == "image/png" && kind == "logo";
+            let out = state.config.image_cache_dir().join(format!("{name}-w{w}.{}", if png { "png" } else { "jpg" }));
+            if let Some(small) = resized(&state.config.ffmpeg, &path, &out, w, png).await {
+                bytes = small;
+                mime = if png { "image/png" } else { "image/jpeg" };
+            }
+        }
+    }
+    let mut resp =
+        ([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=604800")], Body::from(bytes))
+            .into_response();
+    resp.headers_mut().insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
+    if mime == "image/svg+xml" {
+        resp.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'"),
+        );
+    }
+    Ok(resp)
+}
+
+/// A cached smaller copy of `src`, made on first use. None when ffmpeg fails
+/// (the caller then sends the original).
+async fn resized(ffmpeg: &str, src: &std::path::Path, out: &std::path::Path, width: u32, png: bool) -> Option<Vec<u8>> {
+    if let Ok(b) = tokio::fs::read(out).await {
+        return Some(b);
+    }
+    let _permit = RESIZES.acquire().await.ok()?;
+    // Another request may have made it while this one waited.
+    if let Ok(b) = tokio::fs::read(out).await {
+        return Some(b);
+    }
+    let tmp = out.with_extension(format!("tmp-{}", crate::db::new_id()));
+    let codec: &[&str] = if png { &["-c:v", "png"] } else { &["-c:v", "mjpeg", "-q:v", "4"] };
+    let status = tokio::process::Command::new(ffmpeg)
+        .args(["-v", "error", "-y", "-i"])
+        .arg(src)
+        .args(["-vf", &format!("scale='min(iw,{width})':-2"), "-frames:v", "1"])
+        .args(codec)
+        .args(["-f", "image2"])
+        .arg(&tmp)
+        .kill_on_drop(true)
+        .status()
+        .await
+        .ok()?;
+    if !status.success() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        tracing::debug!(src = %src.display(), "image resize failed; sending the original");
+        return None;
+    }
+    tokio::fs::rename(&tmp, out).await.ok()?;
+    tokio::fs::read(out).await.ok()
 }
 
 #[cfg(test)]
@@ -463,6 +587,7 @@ mod tests {
             has_poster: false,
             has_backdrop: false,
             has_thumb: false,
+            has_logo: false,
             files: vec![],
             children: vec![],
             position_ms: 0,

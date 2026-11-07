@@ -92,6 +92,16 @@ fn year_of(date: Option<&str>) -> Option<u16> {
     date.and_then(|d| d.get(0..4)).and_then(|y| y.parse().ok())
 }
 
+/// The best title logo from `images.logos` (asked for with `append_to_response=images`):
+/// PNG/SVG first (transparent), then the first one. Language filtering is done by TMDB.
+fn pick_logo(v: &Value) -> Option<String> {
+    let logos = v.get("images")?.get("logos")?.as_array()?;
+    let path = |l: &Value| l.get("file_path").and_then(Value::as_str).map(str::to_string);
+    let best =
+        logos.iter().find(|l| path(l).is_some_and(|p| p.ends_with(".png") || p.ends_with(".svg"))).or(logos.first())?;
+    image(path(best).as_deref(), "w500")
+}
+
 /// Convert a TMDB movie/tv/episode JSON object into our metadata shape.
 pub fn to_metadata(v: &Value, kind: Option<MediaKind>) -> Metadata {
     let id = v.get("id").map(|i| i.to_string()).unwrap_or_default();
@@ -124,6 +134,7 @@ pub fn to_metadata(v: &Value, kind: Option<MediaKind>) -> Metadata {
         poster_url: if is_episode { None } else { image(v.get("poster_path").and_then(Value::as_str), "w500") },
         backdrop_url: image(v.get("backdrop_path").and_then(Value::as_str), "w1280"),
         thumb_url: image(v.get("still_path").and_then(Value::as_str), "w780"),
+        logo_url: if is_episode { None } else { pick_logo(v) },
         release_date: date,
     }
 }
@@ -165,7 +176,11 @@ impl MetadataProvider for Tmdb {
             MediaKind::Movie => format!("/movie/{provider_id}"),
             MediaKind::Series => format!("/tv/{provider_id}"),
         };
-        Ok(self.get(&path, &[]).await?.map(|v| to_metadata(&v, Some(kind))))
+        // Title logos in the metadata language (its first two letters), English, or language-neutral.
+        let lang = self.language.split('-').next().unwrap_or("en").to_string();
+        let query =
+            [("append_to_response", "images".to_string()), ("include_image_language", format!("{lang},en,null"))];
+        Ok(self.get(&path, &query).await?.map(|v| to_metadata(&v, Some(kind))))
     }
 
     async fn episode(&self, series_id: &str, season: u32, episode: u32) -> anyhow::Result<Option<Metadata>> {
@@ -213,6 +228,14 @@ mod tests {
         assert_eq!(m.runtime_minutes, Some(148));
         assert_eq!(m.genres, vec!["Action"]);
         assert_eq!(m.poster_url.as_deref(), Some("https://image.tmdb.org/t/p/w500/p.jpg"));
+        assert_eq!(m.logo_url, None);
+    }
+
+    #[test]
+    fn picks_a_transparent_logo() {
+        let v = json!({"id": 1, "title": "X", "images": {"logos": [{"file_path": "/a.jpg"}, {"file_path": "/b.png"}]}});
+        let m = to_metadata(&v, Some(MediaKind::Movie));
+        assert_eq!(m.logo_url.as_deref(), Some("https://image.tmdb.org/t/p/w500/b.png"));
     }
 
     #[test]

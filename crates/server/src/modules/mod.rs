@@ -3,13 +3,15 @@
 //! will be registered the same way once the Wasm host exists (plan §4).
 
 pub mod activity;
+mod app_skin_samples;
+pub mod app_skins;
 pub mod auto_tracks;
 pub mod skins;
 pub mod themes;
 pub mod tmdb;
 
 use axum::extract::{Path, State};
-use axum::routing::{delete, get, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use kinora_plugin_api::{ModuleInfo, SettingKind, Settings};
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,7 @@ use crate::state::AppState;
 
 /// All built-in modules.
 pub fn builtin() -> Vec<ModuleInfo> {
-    vec![tmdb::info(), themes::info(), skins::info(), auto_tracks::info(), activity::info()]
+    vec![tmdb::info(), themes::info(), skins::info(), app_skins::info(), auto_tracks::info(), activity::info()]
 }
 
 pub fn find(id: &str) -> Option<ModuleInfo> {
@@ -91,6 +93,20 @@ pub fn routes() -> Router<AppState> {
         .route("/api/player/style", get(skins::get_style).put(skins::put_style))
         .route("/api/playback/{file_id}/tracks", put(auto_tracks::remember))
         .route("/api/track-choices", delete(auto_tracks::forget_all))
+        .route("/api/app-skins", get(app_skins::list))
+        .route("/api/app-skins/errors", post(app_skins::report_error))
+        .route("/api/app-skins/{id}", delete(app_skins::remove))
+        .route("/api/app-skins/{id}/bundle", get(app_skins::preview_bundle))
+        .route("/api/app-skins/{id}/preview", get(app_skins::preview_image))
+        .route("/api/app-skins/{id}/assets/{file}", get(app_skins::asset))
+        .route(
+            "/api/app-skins/upload/{token}/{*path}",
+            put(app_skins::upload_file).layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
+        .route("/api/app-skins/finish/{token}", post(app_skins::upload_finish))
+        .route("/api/app-skin", put(app_skins::put_active))
+        .route("/api/app-skin/active", get(app_skins::active))
+        .route("/api/me/app-skin", get(app_skins::get_mine).put(app_skins::put_mine))
 }
 
 #[derive(Serialize)]

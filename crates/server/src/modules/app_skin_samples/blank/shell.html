@@ -1,0 +1,14 @@
+<!--
+  shell.html: the frame around every page (not the admin pages, they always look standard).
+  Everything with data-kn-* is wired up by Kinora. See docs/app-skins.md for the full list.
+-->
+<header class="top" data-kn-layout="row">
+  <a class="brand" data-kn-link="home" data-kn-text="app.server.name"></a>
+  <nav data-kn-layout="row" aria-label="Libraries" data-kn-focus-group="nav">
+    <a data-kn-link="home">Home</a>
+    <a data-kn-each="app.libraries" data-kn-link="library" data-kn-text="name"></a>
+    <a data-kn-link="search">Search</a>
+  </nav>
+  <div data-kn-component="user-menu"></div>
+</header>
+<main class="page" data-kn-slot="outlet"></main>

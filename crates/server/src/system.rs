@@ -26,6 +26,14 @@ struct Info {
     version: &'static str,
     server_name: String,
     setup_required: bool,
+    /// App skin contract versions (docs/app-skins.md).
+    skin_api: SkinApi,
+}
+
+#[derive(Serialize)]
+struct SkinApi {
+    current: u32,
+    supported: Vec<u32>,
 }
 
 /// Public: the web app calls this first to decide between setup, login and home.
@@ -35,6 +43,10 @@ async fn info(State(state): State<AppState>) -> AppResult<Json<Info>> {
         version: env!("CARGO_PKG_VERSION"),
         server_name: get_setting(&state.db, "server_name").await?.unwrap_or_else(|| "Kinora".into()),
         setup_required: user_count(&state).await? == 0,
+        skin_api: {
+            let r = kinora_plugin_api::app_skin::rules();
+            SkinApi { current: r.skin_api, supported: r.supported.clone() }
+        },
     }))
 }
 
