@@ -3,12 +3,13 @@
 //! will be registered the same way once the Wasm host exists (plan §4).
 
 pub mod activity;
+pub mod auto_tracks;
 pub mod skins;
 pub mod themes;
 pub mod tmdb;
 
 use axum::extract::{Path, State};
-use axum::routing::{get, put};
+use axum::routing::{delete, get, put};
 use axum::{Json, Router};
 use kinora_plugin_api::{ModuleInfo, SettingKind, Settings};
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,7 @@ use crate::state::AppState;
 
 /// All built-in modules.
 pub fn builtin() -> Vec<ModuleInfo> {
-    vec![tmdb::info(), themes::info(), skins::info(), activity::info()]
+    vec![tmdb::info(), themes::info(), skins::info(), auto_tracks::info(), activity::info()]
 }
 
 pub fn find(id: &str) -> Option<ModuleInfo> {
@@ -37,6 +38,11 @@ pub async fn is_enabled(db: &SqlitePool, id: &str) -> bool {
         .flatten()
         .map(|e| e != 0)
         .unwrap_or(default)
+}
+
+/// A bool module setting ("true" / "false"); `default` when it was never saved.
+pub fn flag(settings: &Settings, key: &str, default: bool) -> bool {
+    settings.get(key).map(|v| v == "true").unwrap_or(default)
 }
 
 pub async fn settings(db: &SqlitePool, id: &str) -> Settings {
@@ -83,6 +89,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/themes", get(themes::list))
         .route("/api/player-skins", get(skins::list))
         .route("/api/player/style", get(skins::get_style).put(skins::put_style))
+        .route("/api/playback/{file_id}/tracks", put(auto_tracks::remember))
+        .route("/api/track-choices", delete(auto_tracks::forget_all))
 }
 
 #[derive(Serialize)]
@@ -136,8 +144,11 @@ async fn update(
     let info = find(&id).ok_or(AppError::NotFound)?;
     let mut current = settings(&state.db, &id).await;
     for (k, v) in body.settings {
-        if !info.settings.iter().any(|f| f.key == k) {
+        let Some(field) = info.settings.iter().find(|f| f.key == k) else {
             return Err(AppError::BadRequest(format!("unknown setting {k}")));
+        };
+        if field.kind == SettingKind::Bool && !matches!(v.as_str(), "" | "true" | "false") {
+            return Err(AppError::BadRequest(format!("{k} must be true or false")));
         }
         if v.is_empty() {
             current.remove(&k);

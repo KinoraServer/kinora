@@ -11,6 +11,7 @@ use crate::config::Config;
 
 struct TestApp {
     app: axum::Router,
+    db: sqlx::SqlitePool,
     _dir: tempfile::TempDir,
 }
 
@@ -28,7 +29,7 @@ async fn app() -> TestApp {
         scan_concurrency: 2,
     };
     let state = crate::build_state(config).await.unwrap();
-    TestApp { app: crate::router(state), _dir: dir }
+    TestApp { db: state.db.clone(), app: crate::router(state), _dir: dir }
 }
 
 impl TestApp {
@@ -212,4 +213,206 @@ async fn library_needs_existing_folder() {
         .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("folder not found"));
+}
+
+/// A show with two episodes laid out like the 86 Eighty Six release: English
+/// then Japanese audio, three English subtitle tracks told apart by title.
+/// Episode 2 has its tracks in a different order. Returns the two file ids.
+async fn seed_show(db: &sqlx::SqlitePool) -> (String, String) {
+    let q = |sql: &'static str| sqlx::query(sql);
+    q("INSERT INTO libraries (id, name, kind, paths, created_at) VALUES ('lib', 'Anime', 'tv', '[]', 0)")
+        .execute(db)
+        .await
+        .unwrap();
+    for (id, kind, parent, ep) in [
+        ("show", "series", None, None),
+        ("s1", "season", Some("show"), None),
+        ("e1", "episode", Some("s1"), Some(1)),
+        ("e2", "episode", Some("s1"), Some(2)),
+    ] {
+        sqlx::query(
+            "INSERT INTO items (id, library_id, kind, parent_id, series_id, match_key, title, sort_title, season_number,
+                                episode_number, added_at, updated_at)
+             VALUES (?, 'lib', ?, ?, ?, ?, ?, ?, 1, ?, 0, 0)",
+        )
+        .bind(id)
+        .bind(kind)
+        .bind(parent)
+        .bind(if kind == "series" { None } else { Some("show") })
+        .bind(id)
+        .bind(id)
+        .bind(id)
+        .bind(ep)
+        .execute(db)
+        .await
+        .unwrap();
+    }
+    let audio = |i: u32, lang: &str, title: Option<&str>| json!({"index": i, "codec": "aac", "channels": 2, "language": lang, "title": title, "is_default": i == 1, "bitrate": null});
+    let sub = |i: u32, title: &str| json!({"index": i, "codec": "ass", "language": "eng", "title": title, "is_default": false, "is_forced": false, "is_text": true});
+    let video = json!({"index": 0, "codec": "h264", "profile": "High", "width": 1920, "height": 1080, "bit_depth": 8,
+                       "pix_fmt": "yuv420p", "hdr": "sdr", "dv_profile": null, "dv_compat_id": null, "bitrate": null,
+                       "frame_rate": 23.976});
+    let e1 = json!({"container": "matroska", "duration_ms": 1_420_000, "bitrate": null, "video": video,
+        "audio": [audio(1, "eng", Some("English (2.0 AAC)")), audio(2, "jpn", None)],
+        "subtitles": [sub(3, "Signs & Songs"), sub(4, "Kantai"), sub(5, "English subs")]});
+    let e2 = json!({"container": "matroska", "duration_ms": 1_420_000, "bitrate": null, "video": video,
+        "audio": [audio(1, "jpn", None), audio(2, "eng", Some("English (2.0 AAC)"))],
+        "subtitles": [sub(3, "English subs"), sub(4, "Signs & Songs")]});
+    for (file, item, info) in [("f1", "e1", e1), ("f2", "e2", e2)] {
+        sqlx::query(
+            "INSERT INTO media_files (id, item_id, library_id, path, size, mtime, container, duration_ms, info, scanned_at)
+             VALUES (?, ?, 'lib', ?, 1, 0, 'matroska', 1420000, ?, 0)",
+        )
+        .bind(file)
+        .bind(item)
+        .bind(format!("/media/{file}.mkv"))
+        .bind(info.to_string())
+        .execute(db)
+        .await
+        .unwrap();
+    }
+    ("f1".into(), "f2".into())
+}
+
+#[tokio::test]
+async fn auto_tracks_remember_choices_per_show() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (f1, f2) = seed_show(&t.db).await;
+    // A client that plays the mkv as is, so no transcode is started.
+    let start = json!({"caps": {"containers": ["mkv"], "video_codecs": ["h264"], "audio_codecs": ["aac"]}});
+
+    let (s, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(start.clone()), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert!(body.get("auto_tracks").is_none(), "nothing picked yet: {body}");
+    assert_eq!(body["plan"]["audio_index"], 1);
+
+    // Episode 1: switch to Japanese audio and the full English subtitles.
+    let (s, _) = t
+        .call(
+            "PUT",
+            &format!("/api/playback/{f1}/tracks"),
+            Some(json!({"audio_index": 2, "subtitle_index": 5})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (s, _) = t
+        .call(
+            "PUT",
+            &format!("/api/playback/{f1}/tracks"),
+            Some(json!({"audio_index": 9, "subtitle_index": null})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // Episode 2 starts with the same tracks, found by language and title.
+    let (_, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(start.clone()), Some(&owner)).await;
+    assert_eq!(body["auto_tracks"]["from"], "series", "{body}");
+    assert_eq!(body["auto_tracks"]["audio_index"], 1);
+    assert_eq!(body["auto_tracks"]["subtitle_index"], 3);
+    assert_eq!(body["plan"]["audio_index"], 1);
+    assert_eq!(body["subtitles"][0]["is_hearing_impaired"], false);
+
+    // Asking for a specific audio track wins over the remembered one.
+    let mut explicit = start.clone();
+    explicit["audio_index"] = json!(2);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(explicit), Some(&owner)).await;
+    assert_eq!(body["plan"]["audio_index"], 2);
+    assert!(body.get("auto_tracks").is_none());
+
+    // Subtitles off is remembered as off (null), not as "no opinion" (missing).
+    t.call(
+        "PUT",
+        &format!("/api/playback/{f1}/tracks"),
+        Some(json!({"audio_index": 2, "subtitle_index": null})),
+        Some(&owner),
+    )
+    .await;
+    let (_, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(start.clone()), Some(&owner)).await;
+    assert!(body["auto_tracks"]["subtitle_index"].is_null());
+    assert!(body["auto_tracks"].as_object().unwrap().contains_key("subtitle_index"));
+
+    // Other viewers have their own choices.
+    t.call(
+        "POST",
+        "/api/users",
+        Some(json!({"username": "kid", "password": "password123", "role": "viewer"})),
+        Some(&owner),
+    )
+    .await;
+    let (_, login) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "kid", "password": "password123"})), None).await;
+    let viewer = login["token"].as_str().unwrap().to_string();
+    let (_, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(start.clone()), Some(&viewer)).await;
+    assert!(body.get("auto_tracks").is_none());
+
+    // Turning the module off stops picking (choices are kept for later).
+    let (s, _) = t.call("PUT", "/api/modules/auto-tracks", Some(json!({"enabled": false})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(start.clone()), Some(&owner)).await;
+    assert!(body.get("auto_tracks").is_none());
+    let (s, _) = t
+        .call(
+            "PUT",
+            "/api/modules/auto-tracks",
+            Some(json!({"enabled": true, "settings": {"per_season": "maybe"}})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // Forgetting clears them.
+    t.call("PUT", "/api/modules/auto-tracks", Some(json!({"enabled": true})), Some(&owner)).await;
+    let (s, _) = t.call("DELETE", "/api/track-choices", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f2}"), Some(start), Some(&owner)).await;
+    assert!(body.get("auto_tracks").is_none());
+}
+
+#[tokio::test]
+async fn auto_tracks_fall_back_to_the_library() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (f1, _) = seed_show(&t.db).await;
+    // A second show in the same library, never watched.
+    sqlx::query(
+        "INSERT INTO items (id, library_id, kind, series_id, parent_id, match_key, title, sort_title, added_at, updated_at)
+         VALUES ('other', 'lib', 'series', NULL, NULL, 'other', 'o', 'o', 0, 0),
+                ('o1', 'lib', 'episode', 'other', 'other', 'o1', 'o1', 'o1', 0, 0)",
+    )
+    .execute(&t.db)
+    .await
+    .unwrap();
+    let info: String =
+        sqlx::query_scalar("SELECT info FROM media_files WHERE id = 'f1'").fetch_one(&t.db).await.unwrap();
+    sqlx::query(
+        "INSERT INTO media_files (id, item_id, library_id, path, size, mtime, info, scanned_at)
+         VALUES ('fo', 'o1', 'lib', '/media/o1.mkv', 1, 0, ?, 0)",
+    )
+    .bind(info)
+    .execute(&t.db)
+    .await
+    .unwrap();
+
+    t.call(
+        "PUT",
+        &format!("/api/playback/{f1}/tracks"),
+        Some(json!({"audio_index": 2, "subtitle_index": 5})),
+        Some(&owner),
+    )
+    .await;
+    let start = json!({"caps": {"containers": ["mkv"], "video_codecs": ["h264"], "audio_codecs": ["aac"]}});
+    let (_, body) = t.call("POST", "/api/playback/fo", Some(start.clone()), Some(&owner)).await;
+    assert_eq!(body["auto_tracks"]["from"], "library", "{body}");
+    assert_eq!(body["plan"]["audio_index"], 2);
+    assert_eq!(body["auto_tracks"]["subtitle_index"], 5);
+
+    let (s, _) = t
+        .call("PUT", "/api/modules/auto-tracks", Some(json!({"settings": {"library_fallback": "false"}})), Some(&owner))
+        .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, body) = t.call("POST", "/api/playback/fo", Some(start), Some(&owner)).await;
+    assert!(body.get("auto_tracks").is_none());
 }

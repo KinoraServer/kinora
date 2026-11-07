@@ -6,6 +6,7 @@ import {
   pickSubtitle,
   readSubtitleOffset,
   saveSubtitleOffset,
+  startSubtitle,
 } from "./subtitles";
 import type { SubtitleTrack } from "./types";
 
@@ -37,6 +38,30 @@ describe("pickSubtitle", () => {
   });
   it("never picks image subtitles", () => {
     expect(pickSubtitle([track(2, { supported: false, is_default: true })], null)).toBeNull();
+  });
+});
+
+describe("startSubtitle", () => {
+  const subtitles = [track(3), track(4, { supported: false }), track(5)];
+
+  it("uses the track the server remembered for this show", () => {
+    expect(
+      startSubtitle({ subtitles, auto_tracks: { from: "series", audio_index: 2, subtitle_index: 5 } }, "off"),
+    ).toBe(5);
+  });
+
+  it("keeps subtitles off when that was the choice", () => {
+    expect(
+      startSubtitle({ subtitles, auto_tracks: { from: "series", audio_index: 2, subtitle_index: null } }, "eng"),
+    ).toBe(null);
+  });
+
+  it("falls back to this device's choice without a usable remembered track", () => {
+    expect(
+      startSubtitle({ subtitles, auto_tracks: { from: "library", audio_index: 1, subtitle_index: 4 } }, "off"),
+    ).toBe(null);
+    expect(startSubtitle({ subtitles, auto_tracks: { from: "library", audio_index: 1 } }, "off")).toBe(null);
+    expect(startSubtitle({ subtitles }, "off")).toBe(null);
   });
 });
 

@@ -75,6 +75,7 @@ struct SubtitleTrack {
     codec: String,
     is_default: bool,
     is_forced: bool,
+    is_hearing_impaired: bool,
     /// Text subtitles can be shown in the browser. Image subtitles (PGS, VobSub)
     /// need to be burned into the video, which isn't built yet, so they're listed but disabled.
     supported: bool,
@@ -90,6 +91,10 @@ struct StartResponse {
     duration_ms: u64,
     subtitles: Vec<SubtitleTrack>,
     hardware: String,
+    /// Tracks picked from what this viewer chose on other episodes (module
+    /// "auto-tracks"). Missing when there's nothing to go on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto_tracks: Option<crate::modules::auto_tracks::AutoTracks>,
 }
 
 async fn start(
@@ -99,7 +104,14 @@ async fn start(
     Json(req): Json<StartRequest>,
 ) -> AppResult<Json<StartResponse>> {
     let file = load_file(&state, &file_id).await?;
-    let limits = Limits { max_bitrate: req.max_bitrate, audio_index: req.audio_index, ..Default::default() };
+    // The viewer's remembered tracks for this show, unless the player asked for a specific audio track.
+    let auto_tracks = if req.audio_index.is_none() {
+        crate::modules::auto_tracks::pick(&state.db, &user.id, &file.item_id, &file.info).await
+    } else {
+        None
+    };
+    let audio_index = req.audio_index.or(auto_tracks.as_ref().and_then(|a| a.audio_index));
+    let limits = Limits { max_bitrate: req.max_bitrate, audio_index, ..Default::default() };
     let mut caps = req.caps;
     if req.force_transcode {
         caps.containers.clear();
@@ -119,6 +131,7 @@ async fn start(
             codec: s.codec.clone(),
             is_default: s.is_default,
             is_forced: s.is_forced,
+            is_hearing_impaired: kinora_core::tracks::is_hearing_impaired(s),
             supported: s.is_text,
         })
         .collect();
@@ -164,6 +177,7 @@ async fn start(
         plan,
         subtitles,
         hardware: hw.accel.label().to_string(),
+        auto_tracks,
     }))
 }
 

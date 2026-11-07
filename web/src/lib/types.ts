@@ -174,6 +174,8 @@ export interface SubtitleTrack {
   codec: string;
   is_default: boolean;
   is_forced: boolean;
+  /** SDH / closed captions (the file's flag, or a title that says so). */
+  is_hearing_impaired?: boolean;
   /** false for image subtitles (PGS, VobSub), which can't be shown in the browser yet. */
   supported: boolean;
 }
@@ -198,4 +200,14 @@ export interface PlaybackStart {
   duration_ms: number;
   subtitles: SubtitleTrack[];
   hardware: string;
+  /** Tracks the server picked from this viewer's choices on other episodes (module "auto-tracks"). */
+  auto_tracks?: AutoTracks;
+}
+
+export interface AutoTracks {
+  /** Which remembered choice was used. */
+  from: "season" | "series" | "library";
+  audio_index: number | null;
+  /** Missing: no opinion. null: subtitles off. */
+  subtitle_index?: number | null;
 }

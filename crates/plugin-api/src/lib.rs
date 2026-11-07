@@ -38,6 +38,8 @@ pub enum ExtensionPoint {
     Theme,
     PlayerSkin,
     EventSubscriber,
+    /// Picks the audio and subtitle tracks when playback starts.
+    TrackSelection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +48,9 @@ pub struct SettingField {
     pub label: String,
     pub kind: SettingKind,
     pub help: Option<String>,
+    /// Value used until the admin saves one ("true" / "false" for bools).
+    #[serde(default)]
+    pub default: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
