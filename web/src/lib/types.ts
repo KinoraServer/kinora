@@ -48,6 +48,10 @@ export interface AudioStream {
   language: string | null;
   title: string | null;
   is_default: boolean;
+  bitrate?: number | null;
+  profile?: string | null;
+  sample_rate?: number | null;
+  channel_layout?: string | null;
 }
 
 export interface SubtitleStream {
@@ -58,18 +62,31 @@ export interface SubtitleStream {
   is_text: boolean;
 }
 
+export interface VideoStream {
+  index?: number;
+  codec: string;
+  profile?: string | null;
+  width: number;
+  height: number;
+  bit_depth: number;
+  pix_fmt?: string | null;
+  hdr: "sdr" | "hdr10" | "hlg" | "dolby_vision";
+  dv_profile: number | null;
+  dv_compat_id?: number | null;
+  bitrate?: number | null;
+  frame_rate?: number | null;
+  /** Colour tags; missing for files scanned before Kinora recorded them. */
+  color_space?: string | null;
+  color_primaries?: string | null;
+  color_transfer?: string | null;
+  color_range?: string | null;
+}
+
 export interface MediaInfo {
   container: string;
   duration_ms: number;
   bitrate: number | null;
-  video: {
-    codec: string;
-    width: number;
-    height: number;
-    bit_depth: number;
-    hdr: "sdr" | "hdr10" | "hlg" | "dolby_vision";
-    dv_profile: number | null;
-  } | null;
+  video: VideoStream | null;
   audio: AudioStream[];
   subtitles: SubtitleStream[];
 }
@@ -159,6 +176,18 @@ export interface SubtitleTrack {
   is_forced: boolean;
   /** false for image subtitles (PGS, VobSub), which can't be shown in the browser yet. */
   supported: boolean;
+}
+
+/** `POST api/hls/{session}/keepalive`: the transcoder's live state. */
+export interface SessionStatus {
+  running: boolean;
+  started_at_segment: number;
+  last_requested_segment: number;
+  transcoded_through: number | null;
+  segment_seconds: number;
+  hw: string;
+  running_seconds: number;
+  last_ffmpeg_line: string | null;
 }
 
 export interface PlaybackStart {

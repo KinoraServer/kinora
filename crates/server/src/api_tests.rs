@@ -165,6 +165,16 @@ async fn player_style_is_server_wide_and_admin_only() {
 }
 
 #[tokio::test]
+async fn keepalive_for_a_missing_stream_is_404() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (s, _) = t.call("POST", "/api/hls/nope/keepalive", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, _) = t.call("POST", "/api/hls/nope/keepalive", None, None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn themes_are_public_and_include_builtins() {
     let t = app().await;
     let (s, body) = t.call("GET", "/api/themes", None, None).await;

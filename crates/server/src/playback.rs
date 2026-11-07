@@ -25,6 +25,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/playback/{file_id}", post(start))
         .route("/api/stream/{file_id}", get(direct))
         .route("/api/hls/{session}/main.m3u8", get(playlist))
+        .route("/api/hls/{session}/keepalive", post(keepalive))
         .route("/api/hls/{session}/{segment}", get(segment))
         .route("/api/hls/{session}", delete(stop))
         .route("/api/subtitles/{file_id}/{index}", get(subtitle))
@@ -215,6 +216,17 @@ async fn segment(
     })?;
     let bytes = tokio::fs::read(&path).await?;
     Ok(([(header::CONTENT_TYPE, "video/mp2t")], bytes).into_response())
+}
+
+/// The player calls this every so often (also while paused) so the session
+/// isn't cleaned up under it. 404 means it already was: start a new one.
+async fn keepalive(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(session): Path<String>,
+) -> AppResult<Json<crate::transcode::SessionStatus>> {
+    check_session(&state, &user, &session).await?;
+    state.transcodes.keepalive(&session).await.map(Json).ok_or(AppError::NotFound)
 }
 
 #[derive(Deserialize, Default)]
