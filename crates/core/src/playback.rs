@@ -305,6 +305,10 @@ mod tests {
             dv_compat_id: dv.map(|d| d.1),
             bitrate: None,
             frame_rate: Some(24.0),
+            color_space: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_range: None,
         }
     }
 
@@ -317,6 +321,9 @@ mod tests {
             title: None,
             is_default: true,
             bitrate: None,
+            profile: None,
+            sample_rate: None,
+            channel_layout: None,
         }
     }
 

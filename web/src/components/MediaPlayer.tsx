@@ -17,21 +17,31 @@
 // hands us the <video> element's ref plus the audio/subtitle options.
 
 import {
+  Activity,
+  AppWindow,
   ArrowLeft,
   AudioLines,
   Captions,
   ChevronDown,
   ChevronUp,
+  Check,
+  Copy,
+  Film,
   Gauge,
+  HardDrive,
   Info,
+  ListTree,
   Maximize,
   Minimize,
   MoveVertical,
+  Network,
+  Palette,
   Pause,
   PictureInPicture2,
   Play,
   RotateCcw,
   RotateCw,
+  Server,
   Volume2,
   VolumeX,
   X,
@@ -60,6 +70,7 @@ import { Spinner } from "@/components/ui/card";
 import { formatClock } from "@/lib/format";
 import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
+import { infoToText, type InfoIcon, type InfoSection, type PlayerInfo } from "@/lib/playback-stats";
 import { type PlayerStyleSetting, resolvePlayerStyle } from "@/lib/player-styles";
 import type { PlayerSkin } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -89,8 +100,12 @@ export interface MediaPlayerProps {
   subtitles?: PlayerChoice;
   /** "Direct play", "Transcoding", ... */
   methodLabel?: string | null;
-  /** Extra details shown in the info panel (the page decides what to say). */
-  infoContent?: ReactNode;
+  /**
+   * Live stats for the info panel, called about once a second while it's open
+   * (see lib/playback-stats.ts). Without it the panel shows the basics it can
+   * read from the <video> element.
+   */
+  getInfo?: () => PlayerInfo | null;
   loading?: boolean;
   error?: string | null;
   onBack: () => void;
@@ -354,7 +369,11 @@ function usePlayerController(
     { hotkey: "M", callback: run(actions.toggleMute) },
     { hotkey: "F", callback: run(actions.toggleFullscreen) },
     { hotkey: "I", callback: run(actions.toggleInfo) },
-    { hotkey: "Escape", callback: () => setOpenMenu(null), options: { enabled: openMenu !== null } },
+    {
+      hotkey: "Escape",
+      callback: () => (openMenu !== null ? setOpenMenu(null) : setInfoOpen(false)),
+      options: { enabled: openMenu !== null || infoOpen },
+    },
   ]);
 
   const state: PlayerState = {
@@ -752,25 +771,162 @@ function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
   );
 }
 
-/** Playback details, identical in every layout. */
+const INFO_ICONS: Record<InfoIcon, typeof Film> = {
+  video: Film,
+  audio: AudioLines,
+  color: Palette,
+  performance: Activity,
+  buffer: HardDrive,
+  app: AppWindow,
+  server: Server,
+  network: Network,
+  list: ListTree,
+};
+
+/** What the panel can say with no help from the page. */
+function fallbackInfo(v: HTMLVideoElement | null, s: PlayerState): PlayerInfo {
+  const q = v?.getVideoPlaybackQuality?.();
+  return {
+    basic: [
+      {
+        title: "Playback",
+        icon: "video",
+        rows: [
+          ["Resolution", v?.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : "–"],
+          ["Buffered ahead", `${Math.max(0, Math.round(s.bufferedEnd - s.currentTime))} s`],
+          ["Dropped frames", String(q?.droppedVideoFrames ?? 0)],
+        ],
+      },
+    ],
+    trace: [],
+  };
+}
+
+function InfoSectionView({ section, dense }: { section: InfoSection; dense?: boolean }) {
+  const Icon = INFO_ICONS[section.icon];
+  return (
+    <section className="min-w-0">
+      <h3 className="mb-1.5 flex items-center gap-2 font-semibold text-white">
+        <Icon className="h-4 w-4 text-primary" /> {section.title}
+      </h3>
+      {dense ? (
+        <dl className="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-4 gap-y-0.5 font-mono text-xs">
+          {section.rows.map(([k, v], i) => (
+            <div key={`${k}-${i}`} className="contents">
+              <dt className="text-white/55">{k}</dt>
+              <dd className="min-w-0 [overflow-wrap:anywhere] text-white/90">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <dl className="space-y-0.5">
+          {section.rows.map(([k, v], i) => (
+            <div key={`${k}-${i}`} className="flex gap-1.5">
+              <dt className="shrink-0 text-white/60">{k}:</dt>
+              <dd className="min-w-0 truncate font-medium text-white" title={v}>
+                {v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Playback details, the same in every layout. "Overview" is the short list
+ * most people want; "Trace" is everything we know, for chasing a problem.
+ */
 function InfoPanel({ c }: { c: Ctx }) {
-  const v = c.props.videoRef.current;
-  const dropped = v && "getVideoPlaybackQuality" in v ? v.getVideoPlaybackQuality().droppedVideoFrames : 0;
+  const [tab, setTab] = useState<"basic" | "trace">("basic");
+  const [copied, setCopied] = useState(false);
+  const latest = useRef(c);
+  latest.current = c;
+  const read = useCallback(() => {
+    const { props, s } = latest.current;
+    return props.getInfo?.() ?? fallbackInfo(props.videoRef.current, s);
+  }, []);
+  const [info, setInfo] = useState<PlayerInfo>(read);
+  useEffect(() => {
+    setInfo(read());
+    const timer = window.setInterval(() => setInfo(read()), 1000);
+    return () => clearInterval(timer);
+  }, [read]);
+
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(infoToText(read()))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  };
+  const tabBtn = (id: "basic" | "trace", label: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === id}
+      onClick={() => setTab(id)}
+      className={cn(
+        "cursor-pointer rounded-md px-3 py-1 text-xs font-medium transition-colors",
+        tab === id ? "bg-white/20 text-white" : "text-white/60 hover:text-white",
+      )}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div
-      className="pointer-events-auto absolute top-20 right-4 z-10 w-72 max-w-[calc(100%-2rem)] space-y-2 rounded-lg bg-black/80 p-4 text-sm text-white"
+      role="dialog"
+      aria-label="Playback info"
+      className="pointer-events-auto absolute top-20 left-4 z-10 flex max-h-[calc(100%-12rem)] w-[min(60rem,calc(100%-2rem))] flex-col rounded-xl bg-black/80 text-sm text-white shadow-2xl"
       style={{ backdropFilter: "blur(var(--kn-player-bar-blur))" }}
     >
-      {c.props.methodLabel && <p className="font-medium">{c.props.methodLabel}</p>}
-      {c.props.infoContent}
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-white/70">
-        <dt>Resolution</dt>
-        <dd className="text-white">{v?.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : "–"}</dd>
-        <dt>Buffered ahead</dt>
-        <dd className="text-white">{Math.max(0, Math.round(c.s.bufferedEnd - c.s.currentTime))} s</dd>
-        <dt>Dropped frames</dt>
-        <dd className="text-white">{dropped}</dd>
-      </dl>
+      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
+        {info.trace.length > 0 && (
+          <div role="tablist" className="flex gap-1 rounded-lg bg-white/5 p-0.5">
+            {tabBtn("basic", "Overview")}
+            {tabBtn("trace", "Trace")}
+          </div>
+        )}
+        <span className="flex-1" />
+        {tab === "trace" && (
+          <button
+            type="button"
+            onClick={copy}
+            className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? "Copied" : "Copy all"}
+          </button>
+        )}
+        <button
+          type="button"
+          aria-label="Close playback info"
+          onClick={c.a.toggleInfo}
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full hover:bg-white/15"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="overflow-y-auto overscroll-contain p-4">
+        {tab === "basic" || info.trace.length === 0 ? (
+          <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+            {info.basic.map((sec) => (
+              <InfoSectionView key={sec.title} section={sec} />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {info.trace.map((sec) => (
+              <InfoSectionView key={sec.title} section={sec} dense />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

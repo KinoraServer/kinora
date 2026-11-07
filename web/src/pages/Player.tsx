@@ -4,10 +4,16 @@ import { useNavigate, useParams, useSearchParams } from "react-router";
 import { MediaPlayer, type PlayerChoice } from "@/components/MediaPlayer";
 import { api } from "@/lib/api";
 import { browserCaps } from "@/lib/caps";
+import { PlaybackStats } from "@/lib/playback-stats";
 import { episodeCode } from "@/lib/format";
 import { pickSubtitle, readSubtitlePreference, saveSubtitlePreference } from "@/lib/subtitles";
 import { useApi } from "@/lib/session";
-import type { ItemDetail, PlaybackStart } from "@/lib/types";
+import type { ItemDetail, PlaybackStart, SessionStatus } from "@/lib/types";
+
+/** How often the player tells the server it's still here (paused counts). */
+const KEEPALIVE_MS = 10_000;
+/** Give up recovering a lost stream after this many tries in a minute. */
+const MAX_RECOVERIES = 3;
 
 const METHOD_LABEL: Record<PlaybackStart["method"], string> = {
   direct_play: "Direct play",
@@ -42,7 +48,12 @@ export function PlayerPage() {
   const [audioIndex, setAudioIndex] = useState<number | null>(null);
   const [forceTranscode, setForceTranscode] = useState(false);
   const [subIndex, setSubIndex] = useState<number | null>(null);
+  // Bumped to start a fresh stream at the current position (the old one was cleaned up).
+  const [restartKey, setRestartKey] = useState(0);
   const startAt = useRef(Number(params.get("t") ?? 0));
+  const stayPaused = useRef(false);
+  const recoveries = useRef<number[]>([]);
+  const statsRef = useRef<PlaybackStats | null>(null);
 
   const file = item?.files[0];
 
@@ -66,6 +77,37 @@ export function PlayerPage() {
     hlsRef.current?.destroy();
     hlsRef.current = null;
   }, [id]);
+
+  // Live numbers for the info panel.
+  useEffect(() => {
+    const stats = new PlaybackStats(videoRef.current!);
+    statsRef.current = stats;
+    return () => {
+      stats.dispose();
+      statsRef.current = null;
+    };
+  }, []);
+
+  // The server cleans up streams nobody asked about for a while. If that
+  // happened (a long pause, a laptop asleep), quietly start a new one where we were.
+  const recover = useCallback((why: string) => {
+    const v = videoRef.current;
+    const now = Date.now();
+    recoveries.current = recoveries.current.filter((t) => now - t < 60_000);
+    if (recoveries.current.length >= MAX_RECOVERIES) {
+      setError(`Playback error: ${why}`);
+      return;
+    }
+    recoveries.current.push(now);
+    statsRef.current?.note(`stream lost (${why}), starting a new one`);
+    statsRef.current?.noteRecovery();
+    if (v) {
+      startAt.current = v.currentTime || startAt.current;
+      stayPaused.current = v.paused;
+    }
+    sessionRef.current = null; // already gone on the server
+    setRestartKey((k) => k + 1);
+  }, []);
 
   // Start (or restart, when the audio track changes) playback.
   useEffect(() => {
@@ -96,16 +138,24 @@ export function PlayerPage() {
         } else if (Hls.isSupported()) {
           const hls = new Hls({ startPosition: start, maxBufferLength: 30, backBufferLength: 30 });
           hlsRef.current = hls;
+          statsRef.current?.attachHls(hls, Hls);
           hls.loadSource(p.url);
           hls.attachMedia(video);
           hls.on(Hls.Events.ERROR, (_e, data) => {
-            if (data.fatal) setError(`Playback error: ${data.details}`);
+            if (!data.fatal) return;
+            // 404: the server already cleaned this stream up.
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.response?.code === 404) recover(data.details);
+            else setError(`Playback error: ${data.details}`);
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           video.src = p.url; // Safari / iOS native HLS
           video.addEventListener("loadedmetadata", () => start > 0 && (video.currentTime = start), { once: true });
         } else {
           setError("This browser can't play HLS streams.");
+          return;
+        }
+        if (stayPaused.current) {
+          stayPaused.current = false;
           return;
         }
         video.play().catch(() => {
@@ -117,7 +167,33 @@ export function PlayerPage() {
     return () => {
       cancelled = true;
     };
-  }, [file, audioIndex, forceTranscode, stopSession]);
+  }, [file, audioIndex, forceTranscode, stopSession, restartKey, recover]);
+
+  // Keep the server's stream alive while the player is open, paused or not,
+  // and pick up the transcoder's status for the info panel.
+  useEffect(() => {
+    const session = playback?.session_id;
+    if (!session) {
+      statsRef.current?.setSessionStatus(null);
+      return;
+    }
+    let stopped = false;
+    const ping = () =>
+      api
+        .post<SessionStatus>(`api/hls/${session}/keepalive`)
+        .then((st) => !stopped && statsRef.current?.setSessionStatus(st))
+        .catch((e: Error & { status?: number }) => {
+          if (stopped) return;
+          if (e.status === 404 && sessionRef.current === session) recover("session expired");
+          else statsRef.current?.note(`keepalive failed: ${e.message}`);
+        });
+    ping();
+    const timer = window.setInterval(ping, KEEPALIVE_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [playback?.session_id, recover]);
 
   // Load exactly the chosen subtitle track (or none). Tracks are matched by the id we give each <track>.
   // "hidden" means the browser loads the cues but doesn't draw them: MediaPlayer draws them above
@@ -233,27 +309,14 @@ export function PlayerPage() {
         }
       : undefined;
 
-  const info = playback && (
-    <>
-      {playback.method === "transcode" && <p className="text-white/70">Using {playback.hardware}</p>}
-      {playback.plan.video?.kind === "encode" && (
-        <p className="text-white/80">
-          Video → H.264 {playback.plan.video.height}p at {(playback.plan.video.bitrate / 1_000_000).toFixed(1)} Mbps
-          {playback.plan.video.tonemap && " (HDR tone mapped to SDR)"}
-        </p>
-      )}
-      {playback.plan.audio?.kind === "encode" && (
-        <p className="text-white/80">Audio → AAC {playback.plan.audio.channels}ch</p>
-      )}
-      {playback.plan.reasons.length > 0 && (
-        <ul className="list-disc pl-4 text-white/70">
-          {playback.plan.reasons.map((r) => (
-            <li key={r}>{r}</li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
+  const subtitleLabel = subtitles?.options.find((o) => o.value === subtitles.value)?.label ?? null;
+  const getInfo = () =>
+    statsRef.current?.snapshot({
+      playback,
+      file,
+      audioIndex,
+      subtitleLabel: subIndex === null ? null : subtitleLabel,
+    }) ?? null;
 
   return (
     <MediaPlayer
@@ -263,7 +326,7 @@ export function PlayerPage() {
       audio={audio}
       subtitles={subtitles}
       methodLabel={playback ? METHOD_LABEL[playback.method] : null}
-      infoContent={info}
+      getInfo={getInfo}
       loading={!playback && !error}
       error={error}
       onBack={() => navigate(-1)}

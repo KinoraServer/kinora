@@ -31,6 +31,16 @@ pub struct VideoStream {
     pub dv_compat_id: Option<u8>,
     pub bitrate: Option<u64>,
     pub frame_rate: Option<f64>,
+    /// ffprobe colour tags (bt709, bt2020nc, smpte2084, tv, ...). Missing in
+    /// files scanned before they were recorded.
+    #[serde(default)]
+    pub color_space: Option<String>,
+    #[serde(default)]
+    pub color_primaries: Option<String>,
+    #[serde(default)]
+    pub color_transfer: Option<String>,
+    #[serde(default)]
+    pub color_range: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -42,6 +52,12 @@ pub struct AudioStream {
     pub title: Option<String>,
     pub is_default: bool,
     pub bitrate: Option<u64>,
+    #[serde(default)]
+    pub profile: Option<String>,
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
+    #[serde(default)]
+    pub channel_layout: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -145,6 +161,9 @@ pub fn parse_ffprobe(json: &str) -> Result<MediaInfo, ProbeError> {
                 title,
                 is_default,
                 bitrate: parse_u64(s.get("bit_rate")),
+                profile: string(s.get("profile")),
+                sample_rate: parse_u64(s.get("sample_rate")).map(|n| n as u32),
+                channel_layout: string(s.get("channel_layout")),
             }),
             Some("subtitle") => subtitles.push(SubtitleStream {
                 index,
@@ -215,7 +234,16 @@ fn parse_video(s: &Value, index: u32, codec: String) -> VideoStream {
         dv_compat_id,
         bitrate: parse_u64(s.get("bit_rate")),
         frame_rate: s.get("avg_frame_rate").and_then(Value::as_str).and_then(parse_ratio),
+        color_space: string(s.get("color_space")),
+        color_primaries: string(s.get("color_primaries")),
+        color_transfer: string(s.get("color_transfer")).filter(|t| !t.is_empty()),
+        color_range: string(s.get("color_range")),
     }
+}
+
+/// A non-empty string field ("unknown" counts as missing).
+fn string(v: Option<&Value>) -> Option<String> {
+    v.and_then(Value::as_str).filter(|s| !s.is_empty() && *s != "unknown").map(str::to_string)
 }
 
 fn parse_ratio(r: &str) -> Option<f64> {
@@ -251,10 +279,12 @@ mod tests {
       "streams": [
         {"index":0,"codec_name":"hevc","codec_type":"video","profile":"Main 10","width":3840,"height":2160,
          "pix_fmt":"yuv420p10le","color_transfer":"smpte2084","avg_frame_rate":"24000/1001",
+         "color_space":"bt2020nc","color_primaries":"bt2020","color_range":"tv",
          "disposition":{"default":1},
          "side_data_list":[{"side_data_type":"DOVI configuration record","dv_profile":8,"dv_level":6,
             "dv_bl_signal_compatibility_id":1}]},
-        {"index":1,"codec_name":"eac3","codec_type":"audio","channels":6,
+        {"index":1,"codec_name":"eac3","codec_type":"audio","channels":6,"sample_rate":"48000",
+         "channel_layout":"5.1(side)","profile":"Dolby Digital Plus + Dolby Atmos",
          "tags":{"language":"eng","title":"Atmos"},"disposition":{"default":1}},
         {"index":2,"codec_name":"aac","codec_type":"audio","channels":2,"tags":{"language":"jpn"},"disposition":{"default":0}},
         {"index":3,"codec_name":"subrip","codec_type":"subtitle","tags":{"language":"eng"},"disposition":{"default":0,"forced":1}},
@@ -275,7 +305,13 @@ mod tests {
         assert_eq!(v.hdr, HdrFormat::DolbyVision);
         assert_eq!((v.dv_profile, v.dv_compat_id), (Some(8), Some(1)));
         assert!((v.frame_rate.unwrap() - 23.976).abs() < 0.01);
+        assert_eq!(v.color_primaries.as_deref(), Some("bt2020"));
+        assert_eq!(v.color_space.as_deref(), Some("bt2020nc"));
+        assert_eq!(v.color_range.as_deref(), Some("tv"));
         assert_eq!(info.audio.len(), 2);
+        assert_eq!(info.audio[0].sample_rate, Some(48_000));
+        assert_eq!(info.audio[0].channel_layout.as_deref(), Some("5.1(side)"));
+        assert_eq!(info.audio[1].sample_rate, None);
         assert_eq!(info.audio[0].channels, 6);
         assert_eq!(info.audio[0].language.as_deref(), Some("eng"));
         assert_eq!(info.subtitles.len(), 2);

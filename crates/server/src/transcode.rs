@@ -10,7 +10,8 @@
 //! is restarted on a more conservative pipeline (`fallback_profile`) until
 //! there's nothing left to fall back to.
 //!
-//! Idle sessions are killed and their folders deleted.
+//! Idle sessions are killed and their folders deleted. A paused player stops
+//! asking for segments, so it pings `keepalive` to keep its session.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -85,6 +86,24 @@ pub struct SessionInfo {
     pub running_seconds: u64,
 }
 
+/// Live state of one session, for the player's trace view.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionStatus {
+    /// Is an ffmpeg process running right now?
+    pub running: bool,
+    /// Segment the current ffmpeg process started at (it restarts on a seek).
+    pub started_at_segment: u32,
+    /// Last segment the player asked for.
+    pub last_requested_segment: u32,
+    /// Highest finished segment since the last (re)start.
+    pub transcoded_through: Option<u32>,
+    pub segment_seconds: u32,
+    pub hw: String,
+    pub running_seconds: u64,
+    /// Last line ffmpeg printed, if any.
+    pub last_ffmpeg_line: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct TranscodeManager {
     root: PathBuf,
@@ -142,6 +161,27 @@ impl TranscodeManager {
         let s = self.get(id).await?;
         let s = s.lock().await;
         Some(s.input.duration_ms)
+    }
+
+    /// Mark the session as in use (the player is open, maybe paused) and report its state.
+    pub async fn keepalive(&self, id: &str) -> Option<SessionStatus> {
+        let s = self.get(id).await?;
+        let mut s = s.lock().await;
+        s.last_access = Instant::now();
+        let running = match s.child.as_mut() {
+            Some(c) => matches!(c.try_wait(), Ok(None)),
+            None => false,
+        };
+        Some(SessionStatus {
+            running,
+            started_at_segment: s.started_at_segment,
+            last_requested_segment: s.last_segment,
+            transcoded_through: latest_segment(&s.dir, s.started_at_segment),
+            segment_seconds: SEGMENT_SECONDS,
+            hw: s.input.hw.accel.label().to_string(),
+            running_seconds: s.created.elapsed().as_secs(),
+            last_ffmpeg_line: s.last_stderr.lock().ok().and_then(|l| l.clone()),
+        })
     }
 
     pub async fn stop(&self, id: &str) {
