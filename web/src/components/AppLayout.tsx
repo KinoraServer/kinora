@@ -1,10 +1,10 @@
+import { Avatar } from "@/components/Avatar";
 import { Logo } from "@/components/Logo";
-import { Clapperboard, Home, LogOut, Palette, Search, Settings, Tv } from "lucide-react";
+import { Clapperboard, Home, LogOut, Search, Settings, Tv, UserCog } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import { useApi, useSession } from "@/lib/session";
-import { useTheme } from "@/lib/theme";
-import type { Library } from "@/lib/types";
+import type { Library, User } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function AppLayout() {
@@ -63,7 +63,7 @@ export function AppLayout() {
               <span className="hidden lg:inline">Admin</span>
             </NavLink>
           )}
-          <UserMenu username={user?.username ?? ""} onLogout={logout} />
+          {user && <UserMenu user={user} isAdmin={isAdmin} onLogout={logout} />}
         </div>
       </header>
       <main className="mx-auto max-w-[1800px] px-4 py-6 sm:px-8">
@@ -73,56 +73,50 @@ export function AppLayout() {
   );
 }
 
-function UserMenu({ username, onLogout }: { username: string; onLogout: () => void }) {
+function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boolean; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
-  const { themes, current, setTheme } = useTheme();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const escape = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
   }, []);
+
+  const item = "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent";
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-accent text-sm font-semibold uppercase"
+        className="cursor-pointer rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         aria-label="Account menu"
+        aria-expanded={open}
       >
-        {username.slice(0, 1)}
+        <Avatar user={user} />
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-60 rounded-lg border bg-card p-2 shadow-xl">
-          <p className="px-2 py-1.5 text-sm font-medium">{username}</p>
+        <div className="absolute right-0 mt-2 w-56 rounded-lg border bg-card p-2 shadow-xl">
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <Avatar user={user} className="h-7 w-7 text-xs" />
+            <p className="min-w-0 truncate text-sm font-medium">{user.username}</p>
+          </div>
           <div className="my-1 border-t" />
-          <p className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            <Palette className="h-3.5 w-3.5" /> Theme
-          </p>
-          {themes.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTheme(t.id)}
-              className={cn(
-                "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent",
-                current === t.id && "bg-accent",
-              )}
-            >
-              <span
-                className="h-4 w-4 rounded-full border"
-                style={{
-                  background: `linear-gradient(135deg, ${t.tokens.background ?? "#000"} 50%, ${t.tokens.primary ?? "#888"} 50%)`,
-                }}
-              />
-              {t.name}
-            </button>
-          ))}
+          <Link to="/settings" className={item} onClick={() => setOpen(false)}>
+            <UserCog className="h-4 w-4" /> User Settings
+          </Link>
+          {isAdmin && (
+            <Link to="/admin" className={item} onClick={() => setOpen(false)}>
+              <Settings className="h-4 w-4" /> Admin Settings
+            </Link>
+          )}
           <div className="my-1 border-t" />
-          <button
-            onClick={onLogout}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-          >
+          <button onClick={onLogout} className={item}>
             <LogOut className="h-4 w-4" /> Sign out
           </button>
         </div>

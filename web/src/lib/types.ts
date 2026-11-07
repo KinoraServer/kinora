@@ -6,6 +6,8 @@ export interface User {
   id: string;
   username: string;
   role: Role;
+  /** When the profile picture last changed (Unix ms); null without one. */
+  avatar_version?: number | null;
 }
 
 export interface SystemInfo {
@@ -145,6 +147,8 @@ export interface Theme {
   name: string;
   author?: string | null;
   scheme: "dark" | "light";
+  /** The same theme in the other scheme; paired themes follow light/dark mode. */
+  pair?: string | null;
   tokens: Record<string, string>;
   player?: { layout?: string | null; options?: Record<string, string> } | null;
 }

@@ -8,8 +8,12 @@ import "../src/index.css";
 
 /** Keeps the app's theme in step with the "Theme" toolbar menu. */
 function ThemeSync({ id, children }: { id: string; children: ReactNode }) {
-  const { setTheme } = useTheme();
-  useEffect(() => setTheme(id), [id, setTheme]);
+  const { setTheme, setMode } = useTheme();
+  useEffect(() => {
+    setTheme(id);
+    // Show exactly the picked theme, not the other half of its pair.
+    setMode(builtinThemes.find((t) => t.id === id)?.scheme ?? "dark");
+  }, [id, setTheme, setMode]);
   return children;
 }
 
@@ -22,7 +26,7 @@ const withTheme: Decorator = (Story, { globals }) => (
 );
 
 /** Device-local settings the app keeps in localStorage. Cleared so every story starts the same. */
-const STORAGE_KEYS = ["kinora.theme", "kinora.subtitles", "kinora.subtitle-offset"];
+const STORAGE_KEYS = ["kinora.theme", "kinora.theme-mode", "kinora.subtitles", "kinora.subtitle-offset"];
 
 const preview: Preview = {
   decorators: [withTheme],

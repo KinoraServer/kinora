@@ -15,6 +15,7 @@ import { LoginPage, SetupPage } from "@/pages/Auth";
 import { HomePage } from "@/pages/Home";
 import { ItemPage } from "@/pages/Item";
 import { LibraryPage, SearchPage } from "@/pages/Library";
+import { UserSettingsPage, UserSettingsSectionPage } from "@/pages/settings/UserSettings";
 import "./index.css";
 
 // The player pulls in hls.js, so it loads only when someone presses play.
@@ -43,6 +44,8 @@ const router = createHashRouter([
       { path: "library/:id", element: <LibraryPage /> },
       { path: "item/:id", element: <ItemPage /> },
       { path: "search", element: <SearchPage /> },
+      { path: "settings", element: <UserSettingsPage /> },
+      { path: "settings/:section", element: <UserSettingsSectionPage /> },
       {
         path: "admin",
         element: (

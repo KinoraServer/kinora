@@ -7,8 +7,8 @@ directory (`/config/themes` in Docker).
 1. Copy `themes/example-ocean.json.sample` to a new file ending in `.json`,
    for example `themes/sunset.json`.
 2. Change `id` (lowercase letters, numbers and dashes), `name`, and the colours.
-3. Refresh the web app. Your theme shows up in the account menu, and admins can
-   make it the default in Admin → Settings.
+3. Refresh the web app. Your theme shows up in Admin → Modules & themes, and
+   admins can make it the default in Admin → Settings.
 
 ```json
 {
@@ -25,6 +25,19 @@ directory (`/config/themes` in Docker).
 ```
 
 Tokens you leave out fall back to the Kinora theme.
+
+## Light and dark pairs
+
+To ship the same look in both schemes, make two files (one `"scheme": "dark"`,
+one `"scheme": "light"`) and add `"pair": "<other id>"` to either of them:
+
+```json
+{ "id": "sunset", "scheme": "dark", "pair": "sunset-light", ... }
+```
+
+The theme picker then shows them as one card that follows the Light / Dark /
+System switch. Kinora + Kinora Light and Midnight + Daylight are built-in pairs.
+A theme without a pair always uses its own scheme.
 
 ## Tokens
 

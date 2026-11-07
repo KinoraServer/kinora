@@ -7,6 +7,8 @@ interface SessionValue {
   user: User | null;
   loading: boolean;
   refresh: () => Promise<void>;
+  /** Replace the signed-in user after they edit their own profile. */
+  setUser: (user: User) => void;
   logout: () => Promise<void>;
   isAdmin: boolean;
 }
@@ -48,7 +50,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   return (
-    <SessionContext.Provider value={{ info, user, loading, refresh, logout, isAdmin }}>
+    <SessionContext.Provider value={{ info, user, loading, refresh, setUser, logout, isAdmin }}>
       {children}
     </SessionContext.Provider>
   );

@@ -2,6 +2,7 @@ import { MonitorPlay, Puzzle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
+import { ThemePicker } from "@/components/ThemePicker";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { BUILTIN_STYLES, type PlayerStyleSetting, THEME_STYLE } from "@/lib/player-styles";
@@ -32,37 +33,30 @@ interface ModuleView {
 
 export function ModulesPage() {
   const { data, reload, error } = useApi<ModuleView[]>("api/modules");
-  const { themes } = useTheme();
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Theme"
+          description="Pick a mode and a theme for this browser. The default for everyone else is under Settings."
+        />
+        <div className="space-y-4 p-5 text-sm">
+          <ThemePicker />
+          <p className="border-t pt-4 text-muted-foreground">
+            Themes are small JSON files of colours and sizes. To add one, start from{" "}
+            <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code> in your config directory:
+            copy it to a new name ending in <code className="rounded bg-muted px-1">.json</code>, change the id, name
+            and colours. See docs/themes.md for every token.
+          </p>
+        </div>
+      </Card>
+
       <ErrorNote message={error} />
       {data?.map((m) => (
         <ModuleCard key={m.id} module={m} onChange={reload} />
       ))}
 
       <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} />
-
-      <Card>
-        <CardHeader
-          title="Themes"
-          description="Themes are small JSON files of colours and sizes. Drop one into the themes folder in your config directory and refresh."
-        />
-        <div className="space-y-3 p-5 text-sm">
-          <div className="flex flex-wrap gap-2">
-            {themes.map((t) => (
-              <Badge key={t.id}>
-                {t.name}
-                {t.author && t.author !== "Built-in" ? ` · ${t.author}` : ""}
-              </Badge>
-            ))}
-          </div>
-          <p className="text-muted-foreground">
-            Start from <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code>: copy it to a new
-            name ending in <code className="rounded bg-muted px-1">.json</code>, change the id, name and colours. See
-            docs/themes.md for every token.
-          </p>
-        </div>
-      </Card>
 
       <p className="text-xs text-muted-foreground">
         This product uses the TMDB API but is not endorsed or certified by TMDB.
