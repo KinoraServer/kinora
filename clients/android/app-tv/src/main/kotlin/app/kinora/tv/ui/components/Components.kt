@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
@@ -40,7 +41,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import androidx.compose.foundation.layout.RowScope
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.OutlinedButtonDefaults
+import androidx.tv.material3.Button as TvButton
+import androidx.tv.material3.OutlinedButton as TvOutlinedButton
 import androidx.tv.material3.Card
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -132,9 +137,10 @@ fun ItemRow(
     firstItemFocus: FocusRequester? = null,
 ) {
     Column(modifier) {
-        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 48.dp, bottom = 12.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 48.dp))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 48.dp),
+            // Vertical room so a focused (enlarged) tile isn't clipped by the row.
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             itemsIndexed(items, key = { _, it -> it.id }) { index, item ->
@@ -203,4 +209,65 @@ fun CenteredMessage(text: String, modifier: Modifier = Modifier, action: Pair<St
             Button(onClick = action.second) { Text(action.first) }
         }
     }
+}
+
+/*
+ * Buttons with the theme's colours made explicit. The TV Material defaults turn
+ * a focused button into a pale pill whose label can disappear on our themes;
+ * here focus is the theme's primary colour with its matching text colour, as
+ * in the web app.
+ */
+
+/** A filled button, for the main action on a screen or the selected option. */
+@Composable
+fun Button(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    TvButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.colors(
+            containerColor = c.secondaryContainer,
+            contentColor = c.onSecondaryContainer,
+            focusedContainerColor = c.primary,
+            focusedContentColor = c.onPrimary,
+            pressedContainerColor = c.primary,
+            pressedContentColor = c.onPrimary,
+            disabledContainerColor = c.secondaryContainer.copy(alpha = 0.5f),
+            disabledContentColor = c.onSecondaryContainer.copy(alpha = 0.6f),
+        ),
+        content = content,
+    )
+}
+
+/** An outlined button, for secondary actions. */
+@Composable
+fun OutlinedButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    TvOutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = OutlinedButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = c.onBackground,
+            focusedContainerColor = c.primary,
+            focusedContentColor = c.onPrimary,
+            pressedContainerColor = c.primary,
+            pressedContentColor = c.onPrimary,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = c.onBackground.copy(alpha = 0.4f),
+        ),
+        content = content,
+    )
 }

@@ -2,10 +2,12 @@ package app.kinora.tv.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ColorScheme
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Shapes
 import androidx.tv.material3.darkColorScheme
@@ -75,5 +77,9 @@ fun KinoraTheme(theme: Theme?, content: @Composable () -> Unit) {
             extraLarge = RoundedCornerShape((radius * 2).dp),
         )
     }
-    MaterialTheme(colorScheme = colors, shapes = shapes, content = content)
+    MaterialTheme(colorScheme = colors, shapes = shapes) {
+        // TV Material text is black unless something sets a content colour, and
+        // only its Surface does that. Our screens draw straight on the background.
+        CompositionLocalProvider(LocalContentColor provides colors.onBackground, content = content)
+    }
 }
