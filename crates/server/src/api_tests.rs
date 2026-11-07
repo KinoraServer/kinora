@@ -101,6 +101,102 @@ async fn login_and_wrong_password() {
     assert!(body["token"].as_str().unwrap().len() >= 32);
 }
 
+/// Sends raw bytes (not JSON) and returns the status and the raw response.
+async fn raw(
+    t: &TestApp,
+    method: &str,
+    uri: &str,
+    body: Vec<u8>,
+    token: &str,
+) -> (StatusCode, Vec<u8>, Option<String>) {
+    let req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from(body))
+        .unwrap();
+    let resp = t.app.clone().oneshot(req).await.unwrap();
+    let status = resp.status();
+    let ct = resp.headers().get(header::CONTENT_TYPE).map(|v| v.to_str().unwrap().to_string());
+    (status, resp.into_body().collect().await.unwrap().to_bytes().to_vec(), ct)
+}
+
+#[tokio::test]
+async fn people_edit_their_own_profile() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    t.call(
+        "POST",
+        "/api/users",
+        Some(json!({"username": "kid", "password": "password123", "role": "viewer"})),
+        Some(&owner),
+    )
+    .await;
+    let (_, login) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "kid", "password": "password123"})), None).await;
+    let kid = login["token"].as_str().unwrap().to_string();
+    let kid_id = login["user"]["id"].as_str().unwrap().to_string();
+    assert_eq!(login["user"]["avatar_version"], Value::Null);
+
+    // Rename: blank and taken names are refused.
+    let (s, _) = t.call("PATCH", "/api/auth/profile", Some(json!({"username": "  "})), Some(&kid)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = t.call("PATCH", "/api/auth/profile", Some(json!({"username": "Owner"})), Some(&kid)).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (s, me) = t.call("PATCH", "/api/auth/profile", Some(json!({"username": " Sam "})), Some(&kid)).await;
+    assert_eq!(s, StatusCode::OK, "{me}");
+    assert_eq!(me["username"], "Sam");
+    let (s, _) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "sam", "password": "password123"})), None).await;
+    assert_eq!(s, StatusCode::OK, "signs in with the new name");
+
+    // Password change needs the current one.
+    let (s, _) = t
+        .call(
+            "POST",
+            "/api/auth/password",
+            Some(json!({"current_password": "nope", "new_password": "newpass123"})),
+            Some(&kid),
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = t
+        .call(
+            "POST",
+            "/api/auth/password",
+            Some(json!({"current_password": "password123", "new_password": "newpass123"})),
+            Some(&kid),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK);
+
+    // Pictures: only real images, served back with the detected type.
+    let (s, _, _) = raw(&t, "PUT", "/api/auth/avatar", b"<svg onload=alert(1)>".to_vec(), &kid).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _, _) = raw(&t, "PUT", "/api/auth/avatar", vec![0xFF; 1024 * 1024 + 1], &kid).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let png = b"\x89PNG\r\n\x1a\nnot really a png".to_vec();
+    let (s, body, _) = raw(&t, "PUT", "/api/auth/avatar", png.clone(), &kid).await;
+    assert_eq!(s, StatusCode::OK);
+    let me: Value = serde_json::from_slice(&body).unwrap();
+    assert!(me["avatar_version"].as_i64().is_some());
+    let (_, me) = t.call("GET", "/api/auth/me", None, Some(&kid)).await;
+    assert!(me["avatar_version"].as_i64().is_some());
+
+    let uri = format!("/api/users/{kid_id}/avatar");
+    let (s, body, ct) = raw(&t, "GET", &uri, vec![], &owner).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(body, png);
+    assert_eq!(ct.as_deref(), Some("image/png"));
+
+    let (s, me) = t.call("DELETE", "/api/auth/avatar", None, Some(&kid)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(me["avatar_version"], Value::Null);
+    let (s, _, _) = raw(&t, "GET", &uri, vec![], &owner).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn viewers_cannot_do_admin_things() {
     let t = app().await;

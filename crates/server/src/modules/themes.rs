@@ -29,6 +29,7 @@ fn theme(id: &str, name: &str, scheme: &str, tokens: &[(&str, &str)]) -> Theme {
         name: name.into(),
         author: Some("Built-in".into()),
         scheme: scheme.into(),
+        pair: None,
         tokens: tokens.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<BTreeMap<_, _>>(),
         player: None,
     }
@@ -37,7 +38,7 @@ fn theme(id: &str, name: &str, scheme: &str, tokens: &[(&str, &str)]) -> Theme {
 const FONT: &str = "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
 pub fn builtin_themes() -> Vec<Theme> {
-    vec![
+    let mut themes = vec![
         theme(
             "kinora",
             "Kinora",
@@ -170,7 +171,14 @@ pub fn builtin_themes() -> Vec<Theme> {
                 ("font-sans", FONT),
             ],
         ),
-    ]
+    ];
+    // Paired themes show as one choice that follows light/dark mode.
+    for (dark, light) in [("kinora", "kinora-light"), ("midnight", "daylight")] {
+        if let Some(t) = themes.iter_mut().find(|t| t.id == dark) {
+            t.pair = Some(light.into());
+        }
+    }
+    themes
 }
 
 /// Read and validate every `*.json` in the themes folder. Bad files are
