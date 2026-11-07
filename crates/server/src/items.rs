@@ -179,6 +179,9 @@ struct ItemRow {
     tagline: Option<String>,
     rating: Option<f64>,
     official_rating: Option<String>,
+    /// Stored as a JSON array in text; `ItemDetail` sends the parsed list
+    /// under the same key, so this copy must not be serialized as well.
+    #[serde(skip_serializing)]
     genres: String,
     runtime_minutes: Option<i64>,
     release_date: Option<String>,
@@ -423,4 +426,51 @@ async fn image(
     };
     Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=604800")], Body::from(bytes))
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn item_detail_sends_genres_once_as_a_list() {
+        let item = ItemRow {
+            id: "i1".into(),
+            library_id: "l1".into(),
+            kind: "movie".into(),
+            parent_id: None,
+            series_id: None,
+            title: "Dune".into(),
+            original_title: None,
+            year: Some(2021),
+            season_number: None,
+            episode_number: None,
+            episode_end: None,
+            overview: None,
+            tagline: None,
+            rating: None,
+            official_rating: None,
+            genres: r#"["Action","Science Fiction"]"#.into(),
+            runtime_minutes: None,
+            release_date: None,
+            metadata_status: "matched".into(),
+            added_at: 0,
+        };
+        let detail = ItemDetail {
+            genres: serde_json::from_str(&item.genres).unwrap(),
+            item,
+            series_title: None,
+            has_poster: false,
+            has_backdrop: false,
+            has_thumb: false,
+            files: vec![],
+            children: vec![],
+            position_ms: 0,
+            played: false,
+            next_up: None,
+        };
+        let json = serde_json::to_string(&detail).unwrap();
+        assert_eq!(json.matches("\"genres\"").count(), 1, "{json}");
+        assert!(json.contains(r#""genres":["Action","Science Fiction"]"#), "{json}");
+    }
 }
