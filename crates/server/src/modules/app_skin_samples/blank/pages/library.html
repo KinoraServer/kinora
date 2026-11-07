@@ -1,0 +1,10 @@
+<!-- One library. Try data-kn-virtual on big libraries: cards are added as you scroll. -->
+<header data-kn-layout="row">
+  <h1 data-kn-text="library.name"></h1>
+  <span data-kn-text="countLabel"></span>
+  <select data-kn-select="sort" aria-label="Sort by"></select>
+</header>
+<div data-kn-layout="grid">
+  <a class="card" data-kn-each="items" data-kn-virtual data-kn-link="item" data-kn-use="card"></a>
+</div>
+<p data-kn-if="isEmpty">This library is empty.</p>

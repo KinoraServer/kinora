@@ -1,0 +1,21 @@
+/*
+ * Your CSS. It only applies inside the skin, and always wins over Kinora's defaults.
+ * Top-level declarations style the skin's root element.
+ * Theme colours: var(--kn-background), var(--kn-foreground), var(--kn-primary), var(--kn-card), ...
+ * Layout knobs for data-kn-layout: --kn-gap, --kn-card-w, --kn-cols, --kn-split.
+ */
+
+background: var(--kn-background);
+color: var(--kn-foreground);
+font-family: var(--kn-font-sans);
+min-height: 100vh;
+--kn-card-w: 160px;
+
+.top { padding: 16px 24px; border-bottom: 1px solid var(--kn-border); }
+.brand { font-weight: 700; }
+.page { padding: 24px; }
+.card { display: block; }
+.card img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: var(--kn-radius); background: var(--kn-card); }
+.card small { display: block; color: var(--kn-muted-foreground); }
+.bar { height: 4px; background: var(--kn-muted); }
+.bar i { display: block; height: 100%; background: var(--kn-primary); }

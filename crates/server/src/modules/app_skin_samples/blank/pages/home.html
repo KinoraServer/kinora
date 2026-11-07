@@ -1,0 +1,8 @@
+<!-- Home. page.rows is a list of rows; each row has a title and items (cards). -->
+<section data-kn-each="rows" data-kn-focus-group="row" data-kn-layout="stack">
+  <h2 data-kn-text="title"></h2>
+  <div data-kn-layout="rail" data-kn-rail>
+    <a class="card" data-kn-each="items" data-kn-link="item" data-kn-use="card"></a>
+  </div>
+</section>
+<p data-kn-if="isEmpty">Nothing here yet.</p>

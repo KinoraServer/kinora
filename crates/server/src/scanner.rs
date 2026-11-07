@@ -472,7 +472,7 @@ async fn apply_metadata(db: &SqlitePool, item_id: &str, m: &Metadata, keep_title
             overview = COALESCE(?, overview), tagline = COALESCE(?, tagline), rating = COALESCE(?, rating),
             genres = ?, runtime_minutes = COALESCE(?, runtime_minutes), release_date = COALESCE(?, release_date),
             poster_url = COALESCE(?, poster_url), backdrop_url = COALESCE(?, backdrop_url),
-            thumb_url = COALESCE(?, thumb_url),
+            thumb_url = COALESCE(?, thumb_url), logo_url = COALESCE(?, logo_url),
             provider_ids = json_set(provider_ids, '$.tmdb', ?),
             metadata_status = 'matched', updated_at = ?
          WHERE id = ?",
@@ -490,6 +490,7 @@ async fn apply_metadata(db: &SqlitePool, item_id: &str, m: &Metadata, keep_title
     .bind(&m.poster_url)
     .bind(&m.backdrop_url)
     .bind(&m.thumb_url)
+    .bind(&m.logo_url)
     .bind(&m.provider_id)
     .bind(now_ms())
     .bind(item_id)

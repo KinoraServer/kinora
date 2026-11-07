@@ -56,6 +56,10 @@ impl Config {
         self.config_dir.join("player-skins")
     }
 
+    pub fn app_skins_dir(&self) -> PathBuf {
+        self.config_dir.join("app-skins")
+    }
+
     pub fn image_cache_dir(&self) -> PathBuf {
         self.cache_dir.join("images")
     }

@@ -11,6 +11,8 @@
 
 use std::collections::BTreeMap;
 
+pub mod app_skin;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +42,8 @@ pub enum ExtensionPoint {
     EventSubscriber,
     /// Picks the audio and subtitle tracks when playback starts.
     TrackSelection,
+    /// Whole-app markup and CSS (docs/app-skins.md).
+    AppSkin,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +91,9 @@ pub struct Metadata {
     pub poster_url: Option<String>,
     pub backdrop_url: Option<String>,
     pub thumb_url: Option<String>,
+    /// Title art (a transparent logo of the title), when the provider has one.
+    #[serde(default)]
+    pub logo_url: Option<String>,
     pub release_date: Option<String>,
 }
 

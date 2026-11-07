@@ -214,7 +214,10 @@ pub struct ThemeList {
 pub async fn list(State(state): State<AppState>) -> Json<ThemeList> {
     let mut themes = builtin_themes();
     if super::is_enabled(&state.db, "custom-themes").await {
-        for t in load_custom(&state.config.themes_dir()) {
+        let mut extra = load_custom(&state.config.themes_dir());
+        // Themes that come with installed app skins.
+        extra.extend(super::app_skins::bundled_themes(&state).await);
+        for t in extra {
             // A custom theme can't replace a built-in one.
             if !themes.iter().any(|b| b.id == t.id) {
                 themes.push(t);
