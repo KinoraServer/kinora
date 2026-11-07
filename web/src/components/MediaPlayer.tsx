@@ -7,6 +7,8 @@
 //   3. Layouts              - Minimal, Cinematic, Floating, Pro. They only
 //                             arrange the shared controls, so every layout has
 //                             exactly the same features.
+//      Subtitles     - drawn by us (not the browser) so they can sit above
+//                             the controls and be moved with the D-pad panel.
 //   4. Custom skins         - admin-installed markup + CSS, sanitised here and
 //                             wired to the controller with data-kn-* attributes.
 //   5. MediaPlayer          - picks the layout and renders it over the video.
@@ -18,10 +20,15 @@ import {
   ArrowLeft,
   AudioLines,
   Captions,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
   Gauge,
   Info,
   Maximize,
   Minimize,
+  Move,
   Pause,
   PictureInPicture2,
   Play,
@@ -29,6 +36,7 @@ import {
   RotateCw,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -41,6 +49,15 @@ import {
   useState,
 } from "react";
 import { useHotkeys } from "@tanstack/react-hotkeys";
+import {
+  describeSubtitleOffset,
+  NO_OFFSET,
+  nudgeSubtitleOffset,
+  readSubtitleOffset,
+  SUBTITLE_STEP,
+  type SubtitleOffset,
+  saveSubtitleOffset,
+} from "@/lib/subtitles";
 import { Spinner } from "@/components/ui/card";
 import { formatClock } from "@/lib/format";
 import { useApi } from "@/lib/session";
@@ -81,7 +98,10 @@ export interface MediaPlayerProps {
   onBack: () => void;
   onPause?: () => void;
   onEnded?: () => void;
-  /** <track> elements for the subtitles. */
+  /**
+   * <track> elements for the subtitles. Set the chosen track's mode to
+   * "hidden" (not "showing"): the player draws its cues itself.
+   */
   children?: ReactNode;
 }
 
@@ -107,7 +127,12 @@ export interface PlayerState {
   controlsVisible: boolean;
   infoOpen: boolean;
   openMenu: string | null;
+  /** The viewer's subtitle nudge (see lib/subtitles.ts). */
+  subtitleOffset: SubtitleOffset;
 }
+
+/** `openMenu` id of the subtitle position (D-pad) panel. */
+export const SUBTITLE_PANEL = "subtitle-position";
 
 export interface PlayerActions {
   toggle: () => void;
@@ -121,6 +146,10 @@ export interface PlayerActions {
   toggleInfo: () => void;
   setOpenMenu: (id: string | null) => void;
   setScrubbing: (scrubbing: boolean) => void;
+  /** Move the subtitles by whole percent steps (+x right, +y up). Saved on this device. */
+  nudgeSubtitles: (dx: number, dy: number) => void;
+  resetSubtitles: () => void;
+  toggleSubtitlePanel: () => void;
   /** Show the controls and restart the auto-hide timer. */
   poke: () => void;
 }
@@ -156,6 +185,7 @@ function usePlayerController(
   const [scrubbing, setScrubbing] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [subtitleOffset, setSubtitleOffset] = useState(readSubtitleOffset);
   const hideTimer = useRef<number | undefined>(undefined);
 
   // Mirror the <video> element's state.
@@ -228,7 +258,8 @@ function usePlayerController(
   useEffect(() => {
     if (!openMenu) return;
     const close = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement | null)?.closest?.("[data-menu]")) setOpenMenu(null);
+      const keep = `[data-menu],[data-kn-action="${SUBTITLE_PANEL}"]`;
+      if (!(e.target as HTMLElement | null)?.closest?.(keep)) setOpenMenu(null);
     };
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
@@ -242,6 +273,12 @@ function usePlayerController(
       const max = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : durationHint;
       v.currentTime = Math.min(Math.max(0, seconds), max || seconds);
     };
+    const moveSubtitles = (next: (o: SubtitleOffset) => SubtitleOffset) =>
+      setSubtitleOffset((o) => {
+        const n = next(o);
+        saveSubtitleOffset(n);
+        return n;
+      });
     return {
       toggle: () => {
         const v = video();
@@ -287,6 +324,9 @@ function usePlayerController(
       toggleInfo: () => setInfoOpen((o) => !o),
       setOpenMenu,
       setScrubbing,
+      nudgeSubtitles: (dx, dy) => moveSubtitles((o) => nudgeSubtitleOffset(o, dx, dy)),
+      resetSubtitles: () => moveSubtitles(() => NO_OFFSET),
+      toggleSubtitlePanel: () => setOpenMenu((m) => (m === SUBTITLE_PANEL ? null : SUBTITLE_PANEL)),
       poke,
     };
   }, [videoRef, rootRef, durationHint, poke]);
@@ -299,15 +339,20 @@ function usePlayerController(
     poke();
   };
   const volumeBy = (delta: number) => () => actions.setVolume((videoRef.current?.volume ?? 1) + delta);
+  // While the subtitle panel is open the arrow keys (and a TV remote's D-pad)
+  // move the subtitles instead of seeking and changing the volume.
+  const positioning = openMenu === SUBTITLE_PANEL;
+  const arrow = (normal: () => void, dx: number, dy: number) =>
+    run(() => (positioning ? actions.nudgeSubtitles(dx * SUBTITLE_STEP, dy * SUBTITLE_STEP) : normal()));
   useHotkeys([
     { hotkey: "Space", callback: run(actions.toggle) },
     { hotkey: "K", callback: run(actions.toggle) },
-    { hotkey: "ArrowLeft", callback: run(() => actions.skip(-5)) },
-    { hotkey: "ArrowRight", callback: run(() => actions.skip(5)) },
+    { hotkey: "ArrowLeft", callback: arrow(() => actions.skip(-5), -1, 0) },
+    { hotkey: "ArrowRight", callback: arrow(() => actions.skip(5), 1, 0) },
     { hotkey: "J", callback: run(() => actions.skip(-10)) },
     { hotkey: "L", callback: run(() => actions.skip(10)) },
-    { hotkey: "ArrowUp", callback: run(volumeBy(0.1)) },
-    { hotkey: "ArrowDown", callback: run(volumeBy(-0.1)) },
+    { hotkey: "ArrowUp", callback: arrow(volumeBy(0.1), 0, 1) },
+    { hotkey: "ArrowDown", callback: arrow(volumeBy(-0.1), 0, -1) },
     { hotkey: "M", callback: run(actions.toggleMute) },
     { hotkey: "F", callback: run(actions.toggleFullscreen) },
     { hotkey: "I", callback: run(actions.toggleInfo) },
@@ -319,6 +364,7 @@ function usePlayerController(
     fullscreen,
     infoOpen,
     openMenu,
+    subtitleOffset,
     controlsVisible: active || !snap.playing || scrubbing || openMenu !== null,
   };
   return { state, actions };
@@ -475,6 +521,7 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
   return (
     <div
       ref={ref}
+      data-kn-bar
       role="slider"
       tabIndex={0}
       aria-label="Seek"
@@ -671,6 +718,18 @@ function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
           text={labelled ? (subLabel?.split(" · ")[0] ?? "Subtitles") : undefined}
         />
       )}
+      {props.subtitles && props.subtitles.options.length > 1 && (
+        <div data-menu className="pointer-events-auto">
+          <IconBtn
+            label="Subtitle position"
+            onClick={a.toggleSubtitlePanel}
+            active={s.openMenu === SUBTITLE_PANEL}
+            className={labelled ? "h-9 w-9" : "h-10 w-10"}
+          >
+            <Move className="h-5 w-5" />
+          </IconBtn>
+        </div>
+      )}
       <MenuButton
         c={c}
         id="speed"
@@ -803,6 +862,7 @@ function FloatingLayout({ c }: { c: Ctx }) {
         <p className="min-w-0 truncate text-sm font-medium text-white">{c.props.title}</p>
       </div>
       <div
+        data-kn-bar
         className="absolute inset-x-3 bottom-4 mx-auto flex max-w-4xl flex-col gap-1 rounded-3xl px-4 py-2.5 sm:inset-x-6"
         style={glass()}
       >
@@ -838,6 +898,7 @@ function ProLayout({ c }: { c: Ctx }) {
         )}
       </div>
       <div
+        data-kn-bar
         className="absolute inset-x-0 bottom-0 border-t border-border px-3 pt-1 pb-2"
         style={glass({ borderRadius: 0 })}
       >
@@ -864,6 +925,194 @@ const LAYOUTS: Record<string, (props: { c: Ctx }) => ReactNode> = {
   floating: FloatingLayout,
   pro: ProLayout,
 };
+
+// ---------------------------------------------------------------------------
+// Subtitles: drawn above the controls, moved with a D-pad panel
+// ---------------------------------------------------------------------------
+
+/** Space between the subtitles (or the panel) and the top of the controls bar, in px. */
+const BAR_GAP = 12;
+/** Default distance from the bottom edge when the controls are hidden, in percent. */
+const SUBTITLE_BASE = 6;
+
+/** The cues showing right now, from whichever track Player.tsx set to "hidden". */
+function useActiveCues(videoRef: RefObject<HTMLVideoElement | null>): TextTrackCue[] {
+  const [cues, setCues] = useState<TextTrackCue[]>([]);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const list = v.textTracks;
+    let bound: TextTrack[] = [];
+    const read = () => {
+      const out: TextTrackCue[] = [];
+      for (const t of Array.from(list)) {
+        if (t.mode === "hidden" && t.activeCues) out.push(...Array.from(t.activeCues));
+      }
+      setCues(out);
+    };
+    const rebind = () => {
+      for (const t of bound) t.removeEventListener("cuechange", read);
+      bound = Array.from(list);
+      for (const t of bound) t.addEventListener("cuechange", read);
+      read();
+    };
+    rebind();
+    list.addEventListener("addtrack", rebind);
+    list.addEventListener("removetrack", rebind);
+    list.addEventListener("change", read);
+    return () => {
+      for (const t of bound) t.removeEventListener("cuechange", read);
+      list.removeEventListener("addtrack", rebind);
+      list.removeEventListener("removetrack", rebind);
+      list.removeEventListener("change", read);
+    };
+  }, [videoRef]);
+  return cues;
+}
+
+/**
+ * How far the top of the controls bar is from the bottom of the player, in
+ * px. Layouts (and skins) mark their bar with `data-kn-bar`; a skin without
+ * one gets 15% of the player height.
+ */
+function useBarHeight(rootRef: RefObject<HTMLElement | null>, deps: unknown[]): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const r = root.getBoundingClientRect();
+      const bars = Array.from(root.querySelectorAll<HTMLElement>("[data-kn-bar]"));
+      let top = 0;
+      for (const b of bars) {
+        const br = b.getBoundingClientRect();
+        if (br.height > 0) top = Math.max(top, r.bottom - br.top);
+      }
+      setHeight(Math.round(bars.length ? top : r.height * 0.15));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    for (const b of root.querySelectorAll("[data-kn-bar]")) ro.observe(b);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootRef, ...deps]);
+  return height;
+}
+
+/** One cue, keeping WebVTT's own formatting (italics, bold) but nothing else. */
+function CueText({ cue }: { cue: TextTrackCue }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // getCueAsHTML only builds text and a few inline tags (b, i, u, ruby, ...), never scripts.
+    if (typeof VTTCue !== "undefined" && cue instanceof VTTCue) el.replaceChildren(cue.getCueAsHTML());
+    else el.textContent = (cue as TextTrackCue & { text?: string }).text ?? "";
+  }, [cue]);
+  return <span ref={ref} className="whitespace-pre-line" />;
+}
+
+function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[]; barHeight: number }) {
+  const { subtitleOffset: o, controlsVisible, openMenu } = c.s;
+  const positioning = openMenu === SUBTITLE_PANEL;
+  if (cues.length === 0 && !positioning) return null;
+  const lift = controlsVisible ? barHeight + BAR_GAP : 0;
+  return (
+    <div
+      aria-live="off"
+      className="pointer-events-none absolute z-[5] flex w-max max-w-[90%] -translate-x-1/2 flex-col items-center gap-1 text-center transition-[bottom] duration-300"
+      style={{
+        left: `calc(50% + ${o.x}%)`,
+        // Near the bottom edge, or just above the bar while the controls show, then the viewer's nudge.
+        bottom: `calc(max(${SUBTITLE_BASE}%, ${lift}px) + ${o.y}%)`,
+        fontSize: "clamp(1rem, 0.6rem + 1.9vw, 2.75rem)",
+        lineHeight: 1.3,
+      }}
+    >
+      {cues.length > 0 ? (
+        cues.map((cue, i) => (
+          <p
+            // Cues have no stable id; their start time + position in the list is unique enough.
+            key={`${cue.startTime}-${i}`}
+            className="rounded-md bg-black/60 px-[0.4em] py-[0.1em] text-white [box-decoration-break:clone] [text-shadow:0_1px_3px_rgb(0_0_0/0.9)]"
+          >
+            <CueText cue={cue} />
+          </p>
+        ))
+      ) : (
+        <p className="rounded-md border border-dashed border-white/60 bg-black/60 px-[0.4em] py-[0.1em] text-white/90">
+          Subtitles appear here
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The D-pad: nudge the subtitles a step at a time, or put them back. */
+function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
+  const { s, a } = c;
+  const o = s.subtitleOffset;
+  const btn =
+    "flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40";
+  const step = (dx: number, dy: number) => () => {
+    a.nudgeSubtitles(dx * SUBTITLE_STEP, dy * SUBTITLE_STEP);
+    a.poke();
+  };
+  return (
+    <div
+      data-menu
+      role="group"
+      aria-label="Subtitle position"
+      className="pointer-events-auto absolute right-4 z-20 w-60 rounded-xl border border-white/10 bg-black/85 p-4 text-sm text-white shadow-2xl"
+      style={{ bottom: barHeight + BAR_GAP, backdropFilter: "blur(var(--kn-player-bar-blur))" }}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <p className="font-medium">Subtitle position</p>
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={() => a.setOpenMenu(null)}
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full hover:bg-white/15"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mx-auto grid w-max grid-cols-3 gap-1.5">
+        <span />
+        <button type="button" aria-label="Move subtitles up" className={btn} onClick={step(0, 1)}>
+          <ChevronUp className="h-5 w-5" />
+        </button>
+        <span />
+        <button type="button" aria-label="Move subtitles left" className={btn} onClick={step(-1, 0)}>
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          aria-label="Reset subtitle position"
+          title="Reset"
+          className={cn(btn, "bg-primary/25 hover:bg-primary/40")}
+          onClick={a.resetSubtitles}
+          disabled={o.x === 0 && o.y === 0}
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
+        <button type="button" aria-label="Move subtitles right" className={btn} onClick={step(1, 0)}>
+          <ChevronRight className="h-5 w-5" />
+        </button>
+        <span />
+        <button type="button" aria-label="Move subtitles down" className={btn} onClick={step(0, -1)}>
+          <ChevronDown className="h-5 w-5" />
+        </button>
+        <span />
+      </div>
+      <p className="mt-3 text-center tabular-nums text-white/80" aria-live="polite">
+        {describeSubtitleOffset(o)}
+      </p>
+      <p className="mt-1 text-center text-xs text-white/50">Arrow keys move them too. Saved on this device.</p>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 4. Custom skins: sanitising, scoping, and wiring markup to the controller
@@ -1029,6 +1278,7 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
         fullscreen: a.toggleFullscreen,
         pip: a.togglePip,
         info: a.toggleInfo,
+        [SUBTITLE_PANEL]: a.toggleSubtitlePanel,
         back: props.onBack,
       };
       actions[el.dataset.knAction ?? ""]?.();
@@ -1154,6 +1404,8 @@ export function MediaPlayer(props: MediaPlayerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const { state: s, actions: a } = usePlayerController(videoRef, rootRef, props.durationHint ?? 0);
   const { style, skin, ready } = usePlayerStyle();
+  const cues = useActiveCues(videoRef);
+  const barHeight = useBarHeight(rootRef, [ready, style, skin]);
 
   const c: Ctx = { s, a, props };
   const Layout = LAYOUTS[style] ?? MinimalLayout;
@@ -1192,6 +1444,8 @@ export function MediaPlayer(props: MediaPlayerProps) {
         </div>
       )}
 
+      {ready && <SubtitleOverlay c={c} cues={cues} barHeight={barHeight} />}
+      {ready && s.openMenu === SUBTITLE_PANEL && <SubtitlePanel c={c} barHeight={barHeight} />}
       {ready && s.infoOpen && !skin && <InfoPanel c={c} />}
 
       {(loading || (s.buffering && !error)) && (

@@ -67,12 +67,19 @@ Add attributes to ordinary HTML elements; Kinora does the rest.
 
 | Attribute | What it does |
 |---|---|
-| `data-kn-action="play"` | Play / pause. Others: `skip-back`, `skip-forward`, `mute`, `fullscreen`, `pip`, `info`, `back` |
+| `data-kn-action="play"` | Play / pause. Others: `skip-back`, `skip-forward`, `mute`, `fullscreen`, `pip`, `info`, `subtitle-position` (opens the subtitle D-pad), `back` |
 | `data-kn-text="time"` | Fills the element with text. Others: `duration`, `remaining`, `title`, `method`, `resolution`, `buffer` |
 | `data-kn-seek` | A seek bar. Children: `data-kn-fill` (played), `data-kn-buffer` (buffered), `data-kn-thumb` (handle, positioned with `left`) |
 | `data-kn-volume` | A volume bar with a `data-kn-fill` child |
 | `select data-kn-select="audio"` | Filled with the audio tracks. Others: `subtitles`, `speed` |
+| `data-kn-bar` | Marks your controls bar. While the controls show, subtitles sit just above its top edge (without it they rise by 15% of the player height) |
 | `data-kn-interactive` | Lets any other element receive clicks |
+
+Kinora draws subtitles itself, on top of every style and skin. They sit near
+the bottom while the controls are hidden and move up above the bar when the
+controls show. Viewers can nudge them up, down, left and right with the
+subtitle position panel (or the arrow keys while it is open); the spot is saved
+per device.
 
 The skin's root element carries state attributes you can style:
 `data-playing`, `data-buffering`, `data-muted`, `data-fullscreen`,

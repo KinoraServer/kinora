@@ -119,18 +119,35 @@ export function PlayerPage() {
     };
   }, [file, audioIndex, forceTranscode, stopSession]);
 
-  // Show exactly the chosen subtitle track (or none). Tracks are matched by the id we give each <track>.
+  // Load exactly the chosen subtitle track (or none). Tracks are matched by the id we give each <track>.
+  // "hidden" means the browser loads the cues but doesn't draw them: MediaPlayer draws them above
+  // its controls. iPhone's native fullscreen hides our overlay, so there the browser draws them.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
+    let nativeFullscreen = false;
     const apply = () => {
       for (const t of Array.from(v.textTracks)) {
-        t.mode = t.id === `sub-${subIndex}` ? "showing" : "disabled";
+        t.mode = t.id === `sub-${subIndex}` ? (nativeFullscreen ? "showing" : "hidden") : "disabled";
       }
+    };
+    const begin = () => {
+      nativeFullscreen = true;
+      apply();
+    };
+    const end = () => {
+      nativeFullscreen = false;
+      apply();
     };
     apply();
     v.textTracks.addEventListener("addtrack", apply);
-    return () => v.textTracks.removeEventListener("addtrack", apply);
+    v.addEventListener("webkitbeginfullscreen", begin);
+    v.addEventListener("webkitendfullscreen", end);
+    return () => {
+      v.textTracks.removeEventListener("addtrack", apply);
+      v.removeEventListener("webkitbeginfullscreen", begin);
+      v.removeEventListener("webkitendfullscreen", end);
+    };
   }, [playback, subIndex]);
 
   // Direct play can still fail (e.g. a codec the browser claimed but can't decode): fall back to transcoding.
