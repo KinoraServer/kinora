@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { browserCaps } from "@/lib/caps";
 import { PlaybackStats } from "@/lib/playback-stats";
 import { episodeCode } from "@/lib/format";
-import { pickSubtitle, readSubtitlePreference, saveSubtitlePreference } from "@/lib/subtitles";
+import { readSubtitlePreference, saveSubtitlePreference, startSubtitle } from "@/lib/subtitles";
 import { useApi } from "@/lib/session";
 import type { ItemDetail, PlaybackStart, SessionStatus } from "@/lib/types";
 
@@ -32,8 +32,13 @@ function beacon(method: string, url: string, body: unknown) {
   }).catch(() => {});
 }
 
+/** Remounted per item, so going to another episode starts fresh (its own tracks, no leftover audio pick). */
 export function PlayerPage() {
   const { id } = useParams();
+  return <PlayerView key={id} id={id} />;
+}
+
+function PlayerView({ id }: { id: string | undefined }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { data: item } = useApi<ItemDetail>(`api/items/${id}`, [id]);
@@ -56,6 +61,17 @@ export function PlayerPage() {
   const statsRef = useRef<PlaybackStats | null>(null);
 
   const file = item?.files[0];
+  // The subtitle track is picked once per video. Restarts (an audio change, a lost stream) keep it.
+  const subPicked = useRef(false);
+
+  /** Tell the server what the viewer picked, so other episodes (and devices) start with it. */
+  const rememberTracks = useCallback(
+    (audio: number | null, sub: number | null) => {
+      if (!file) return;
+      api.put(`api/playback/${file.id}/tracks`, { audio_index: audio, subtitle_index: sub }).catch(() => {});
+    },
+    [file],
+  );
 
   const saveProgress = useCallback(() => {
     const v = videoRef.current;
@@ -127,7 +143,10 @@ export function PlayerPage() {
         if (cancelled) return;
         stopSession();
         setPlayback(p);
-        setSubIndex(pickSubtitle(p.subtitles, readSubtitlePreference()));
+        if (!subPicked.current) {
+          subPicked.current = true;
+          setSubIndex(startSubtitle(p, readSubtitlePreference()));
+        }
         durationRef.current = p.duration_ms;
         sessionRef.current = p.session_id;
         const start = startAt.current;
@@ -281,6 +300,7 @@ export function PlayerPage() {
           onChange: (value) => {
             startAt.current = videoRef.current?.currentTime ?? 0;
             setAudioIndex(Number(value));
+            rememberTracks(Number(value), subIndex);
           },
         }
       : undefined;
@@ -305,6 +325,7 @@ export function PlayerPage() {
             setSubIndex(chosen);
             const track = playback.subtitles.find((t) => t.index === chosen);
             saveSubtitlePreference(chosen === null ? "off" : (track?.language ?? "off"));
+            rememberTracks(audioIndex ?? playback.plan.audio_index, chosen);
           },
         }
       : undefined;

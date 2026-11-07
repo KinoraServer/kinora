@@ -1,4 +1,4 @@
-import type { SubtitleTrack } from "./types";
+import type { PlaybackStart, SubtitleTrack } from "./types";
 
 const STORAGE_KEY = "kinora.subtitles";
 
@@ -34,6 +34,25 @@ export function pickSubtitle(tracks: SubtitleTrack[], preference: string | null)
     if (match) return match.index;
   }
   return (usable.find((t) => t.is_default) ?? usable.find((t) => t.is_forced))?.index ?? null;
+}
+
+/**
+ * The subtitle track to start with: what the server remembered for this show
+ * (module "auto-tracks"), unless it can't be shown here, then this device's
+ * last choice via `pickSubtitle`.
+ */
+export function startSubtitle(p: Pick<PlaybackStart, "subtitles" | "auto_tracks">, preference: string | null) {
+  const auto = p.auto_tracks?.subtitle_index;
+  if (auto === null) return null;
+  if (auto !== undefined && p.subtitles.some((t) => t.index === auto && t.supported)) return auto;
+  return pickSubtitle(p.subtitles, preference);
+}
+
+/** Where the remembered tracks came from, for the info panel. */
+export function describeAutoTracks(p: Pick<PlaybackStart, "auto_tracks"> | null): string {
+  const from = p?.auto_tracks?.from;
+  if (!from) return "no remembered choice";
+  return `your last choice for this ${from === "series" ? "show" : from}`;
 }
 
 // ---------------------------------------------------------------------------

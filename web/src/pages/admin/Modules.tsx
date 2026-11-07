@@ -14,6 +14,8 @@ interface SettingField {
   label: string;
   kind: "text" | "secret" | "bool";
   help: string | null;
+  /** Used until a value is saved. */
+  default?: string | null;
 }
 
 interface ModuleView {
@@ -166,6 +168,10 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
     }
   };
 
+  const textFields = m.settings.filter((f) => f.kind !== "bool");
+  const boolFields = m.settings.filter((f) => f.kind === "bool");
+  const boolValue = (f: SettingField) => (m.values[f.key] ?? f.default ?? "false") === "true";
+
   const saveSettings = async () => {
     if (await update({ settings: values })) {
       setValues({});
@@ -193,9 +199,28 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
         </div>
         <Switch checked={m.enabled} onChange={(v) => update({ enabled: v })} label={`Enable ${m.name}`} />
       </div>
-      {m.settings.length > 0 && (
+      {boolFields.length > 0 && (
         <div className="space-y-4 border-t p-5">
-          {m.settings.map((f) => (
+          {boolFields.map((f) => (
+            <div key={f.key} className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">{f.label}</p>
+                {f.help && <p className="text-sm text-muted-foreground">{f.help}</p>}
+              </div>
+              <Switch
+                checked={boolValue(f)}
+                onChange={(v) => update({ settings: { [f.key]: String(v) } })}
+                label={f.label}
+              />
+            </div>
+          ))}
+          {textFields.length === 0 && <ErrorNote message={error} />}
+        </div>
+      )}
+      {m.id === "auto-tracks" && <ForgetTrackChoices />}
+      {textFields.length > 0 && (
+        <div className="space-y-4 border-t p-5">
+          {textFields.map((f) => (
             <Field key={f.key} label={f.label} help={f.help ?? undefined}>
               <Input
                 type={f.kind === "secret" ? "password" : "text"}
@@ -210,13 +235,41 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
             <Button size="sm" onClick={saveSettings} disabled={Object.keys(values).length === 0}>
               Save
             </Button>
-            {saved && (
-              <span className="text-sm text-muted-foreground">Saved. New metadata is fetched on the next scan.</span>
-            )}
+            {saved && <span className="text-sm text-muted-foreground">Saved.</span>}
           </div>
           <ErrorNote message={error} />
         </div>
       )}
     </Card>
+  );
+}
+
+/** Clears the signed-in viewer's remembered audio and subtitle choices (not other viewers'). */
+function ForgetTrackChoices() {
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const forget = async () => {
+    setState("busy");
+    setError(null);
+    try {
+      await api.del("api/track-choices");
+      setState("done");
+    } catch (e) {
+      setError((e as Error).message);
+      setState("idle");
+    }
+  };
+  return (
+    <div className="flex items-center gap-3 border-t p-5">
+      <Button size="sm" variant="outline" onClick={forget} disabled={state === "busy"}>
+        Forget my track choices
+      </Button>
+      <span className="text-sm text-muted-foreground">
+        {state === "done"
+          ? "Done. Every show starts with its default tracks until you pick again."
+          : "Only clears your own choices."}
+      </span>
+      <ErrorNote message={error} />
+    </div>
   );
 }

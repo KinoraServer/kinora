@@ -68,6 +68,10 @@ pub struct SubtitleStream {
     pub title: Option<String>,
     pub is_default: bool,
     pub is_forced: bool,
+    /// SDH / closed captions. Missing in files scanned before it was recorded;
+    /// `tracks::is_hearing_impaired` also looks at the title.
+    #[serde(default)]
+    pub is_hearing_impaired: bool,
     /// Text subs (srt, ass, webvtt) can be converted; image subs (PGS, VobSub) must be burned in.
     pub is_text: bool,
 }
@@ -173,6 +177,7 @@ pub fn parse_ffprobe(json: &str) -> Result<MediaInfo, ProbeError> {
                 title,
                 is_default,
                 is_forced: flag(disposition, "forced"),
+                is_hearing_impaired: flag(disposition, "hearing_impaired"),
             }),
             _ => {}
         }

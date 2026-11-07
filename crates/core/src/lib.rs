@@ -10,3 +10,4 @@ pub mod media;
 pub mod naming;
 pub mod playback;
 pub mod roles;
+pub mod tracks;

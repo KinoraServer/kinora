@@ -29,12 +29,14 @@ pub fn info() -> ModuleInfo {
                 label: "API key or read access token".into(),
                 kind: SettingKind::Secret,
                 help: Some("Free at themoviedb.org → Settings → API.".into()),
+                default: None,
             },
             SettingField {
                 key: "language".into(),
                 label: "Metadata language".into(),
                 kind: SettingKind::Text,
                 help: Some("For example en-US, de-DE, ja-JP.".into()),
+                default: None,
             },
         ],
     }

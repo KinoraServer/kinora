@@ -8,6 +8,7 @@
 
 import type Hls from "hls.js";
 import { formatBytes, formatClock } from "./format";
+import { describeAutoTracks } from "./subtitles";
 import type { MediaFile, PlaybackStart, SessionStatus } from "./types";
 
 export type InfoIcon = "video" | "audio" | "color" | "performance" | "buffer" | "app" | "server" | "network" | "list";
@@ -406,6 +407,7 @@ export class PlaybackStats {
       ["video plan", plan?.video ? JSON.stringify(plan.video) : "none"],
       ["audio plan", plan?.audio ? JSON.stringify(plan.audio) : "none"],
       ["audio stream index", or(plan?.audio_index)],
+      ["tracks picked from", describeAutoTracks(playback)],
       ["reasons", plan?.reasons.length ? plan.reasons.join("; ") : "none"],
       ["hardware", or(playback?.hardware)],
       ["recoveries", String(this.recoveries)],
