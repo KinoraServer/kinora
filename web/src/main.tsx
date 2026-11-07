@@ -1,7 +1,6 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { createHashRouter, Navigate, RouterProvider } from "react-router";
-import { AppLayout } from "@/components/AppLayout";
 import { Spinner } from "@/components/ui/card";
 import { SessionProvider, useSession } from "@/lib/session";
 import { ThemeProvider } from "@/lib/theme";
@@ -16,6 +15,9 @@ import { HomePage } from "@/pages/Home";
 import { ItemPage } from "@/pages/Item";
 import { LibraryPage, SearchPage } from "@/pages/Library";
 import { UserSettingsPage, UserSettingsSectionPage } from "@/pages/settings/UserSettings";
+import { PreviewBanner } from "@/skin-engine/PreviewBanner";
+import { DefaultPage, SkinLayout, SkinPage } from "@/skin-engine/routes";
+import { SkinProvider } from "@/skin-engine/SkinProvider";
 import "./index.css";
 
 // The player pulls in hls.js, so it loads only when someone presses play.
@@ -38,14 +40,56 @@ const router = createHashRouter([
     ),
   },
   {
-    element: <AppLayout />,
+    element: <SkinLayout />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: "library/:id", element: <LibraryPage /> },
-      { path: "item/:id", element: <ItemPage /> },
-      { path: "search", element: <SearchPage /> },
-      { path: "settings", element: <UserSettingsPage /> },
-      { path: "settings/:section", element: <UserSettingsSectionPage /> },
+      {
+        index: true,
+        element: (
+          <SkinPage page="home">
+            <HomePage />
+          </SkinPage>
+        ),
+      },
+      {
+        path: "library/:id",
+        element: (
+          <SkinPage page="library">
+            <LibraryPage />
+          </SkinPage>
+        ),
+      },
+      {
+        path: "item/:id",
+        element: (
+          <SkinPage page="item">
+            <ItemPage />
+          </SkinPage>
+        ),
+      },
+      {
+        path: "search",
+        element: (
+          <SkinPage page="search">
+            <SearchPage />
+          </SkinPage>
+        ),
+      },
+      {
+        path: "settings",
+        element: (
+          <DefaultPage>
+            <UserSettingsPage />
+          </DefaultPage>
+        ),
+      },
+      {
+        path: "settings/:section",
+        element: (
+          <DefaultPage>
+            <UserSettingsSectionPage />
+          </DefaultPage>
+        ),
+      },
       {
         path: "admin",
         element: (
@@ -78,7 +122,12 @@ function Root() {
   if (!info) return <p className="p-8">Can't reach the Kinora server.</p>;
   if (info.setup_required) return <SetupPage />;
   if (!user) return <LoginPage />;
-  return <RouterProvider router={router} />;
+  return (
+    <SkinProvider>
+      <RouterProvider router={router} />
+      <PreviewBanner />
+    </SkinProvider>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(

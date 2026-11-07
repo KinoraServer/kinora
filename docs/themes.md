@@ -65,6 +65,13 @@ contain `;`, `{`, `}`, `<` or `>`; invalid files are skipped and logged.
 A theme can also pick a video player layout and tweak its look. See
 [player-skins.md](player-skins.md).
 
+## Changing the layout too
+
+Themes only change colours and sizes. To change the layout of the whole app
+(navigation, home, library, detail and search pages), write an app skin: see
+[app-skins.md](app-skins.md). Skins read the theme's colours, so the two work
+together.
+
 ## Later
 
 Themes use the same format that theme plugins and the marketplace will

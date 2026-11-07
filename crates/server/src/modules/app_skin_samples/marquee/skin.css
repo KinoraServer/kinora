@@ -101,8 +101,8 @@ a, button { color: inherit; text-decoration: none; cursor: pointer; }
 .mq-slide::before {
   content: ""; position: absolute; inset: 0;
   background:
-    linear-gradient(90deg, rgb(0 0 0 / 0.78) 0%, rgb(0 0 0 / 0.35) 45%, transparent 70%),
-    linear-gradient(0deg, var(--kn-background) 0%, transparent 32%);
+    linear-gradient(0deg, var(--kn-background) 0%, transparent 32%),
+    linear-gradient(90deg, rgb(0 0 0 / 0.78) 0%, rgb(0 0 0 / 0.35) 45%, transparent 70%);
 }
 .mq-slide-body { position: relative; max-width: 40rem; padding: 0 var(--mq-pad) clamp(90px, 16vh, 180px); }
 .mq-logo { display: block; max-width: min(28rem, 70vw); max-height: 9rem; object-fit: contain; object-position: left bottom; margin-bottom: 18px; filter: drop-shadow(0 4px 18px rgb(0 0 0 / 0.5)); }
@@ -135,7 +135,7 @@ a, button { color: inherit; text-decoration: none; cursor: pointer; }
 
 /* ---------- rows and cards ---------- */
 
-.mq-rows { position: relative; z-index: 2; margin-top: -90px; padding-bottom: 60px; display: grid; gap: 34px; }
+.mq-rows { position: relative; z-index: 2; margin-top: -90px; padding-bottom: 60px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 34px; }
 &:has(.mq-hero) .mq-rows, .mq-hero ~ .mq-rows { margin-top: -90px; }
 .mq-rows:first-child { margin-top: 0; padding-top: calc(var(--mq-header-h) + 20px); }
 .mq-row-title { margin: 0 var(--mq-pad) 10px; font-size: clamp(1.05rem, 1.6vw, 1.45rem); font-weight: 700; }
@@ -234,7 +234,7 @@ a:hover .mq-play-icon, a:focus-visible .mq-play-icon { opacity: 1; }
 }
 .mq-detail-bg::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgb(0 0 0 / 0.85), rgb(0 0 0 / 0.35) 55%, transparent), linear-gradient(0deg, var(--kn-background), transparent 45%);
+  background: linear-gradient(0deg, var(--kn-background), transparent 45%), linear-gradient(90deg, rgb(0 0 0 / 0.85), rgb(0 0 0 / 0.35) 55%, transparent);
 }
 .mq-detail-body { position: relative; z-index: 1; max-width: 48rem; padding: calc(var(--mq-header-h) + clamp(80px, 22vh, 260px)) var(--mq-pad) 20px; }
 .mq-crumb { display: inline-block; margin-bottom: 10px; font-weight: 700; color: var(--mq-accent); }

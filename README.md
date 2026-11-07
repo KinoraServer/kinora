@@ -112,7 +112,7 @@ crates/server/      the binary: HTTP API (axum), SQLite (sqlx), scanner,
                     transcoder, hardware detection, built-in modules
 web/                React + Tailwind web app (Vite)
 packaging/          Unraid template
-docs/               plan, decisions, theme guide, Storybook guide
+docs/               plan, decisions, theme, app skin and Storybook guides
 ```
 
 Most behaviour lives in `crates/core` as plain functions, so it's tested

@@ -73,7 +73,7 @@ export function AppLayout() {
   );
 }
 
-function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boolean; onLogout: () => void }) {
+export function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boolean; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

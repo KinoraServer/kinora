@@ -97,6 +97,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/app-skins/errors", post(app_skins::report_error))
         .route("/api/app-skins/{id}", delete(app_skins::remove))
         .route("/api/app-skins/{id}/bundle", get(app_skins::preview_bundle))
+        .route("/api/app-skins/{id}/options", put(app_skins::put_options))
+        .route("/api/app-skins/starters/{name}", post(app_skins::add_starter))
         .route("/api/app-skins/{id}/preview", get(app_skins::preview_image))
         .route("/api/app-skins/{id}/assets/{file}", get(app_skins::asset))
         .route(

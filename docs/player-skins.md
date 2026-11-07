@@ -46,6 +46,10 @@ the theme colours, so any theme restyles any style.
 
 ## Custom skins (your own markup and CSS)
 
+(This is for the player only. To change the rest of the app, see
+[app-skins.md](app-skins.md); an app skin can bundle a player skin in its
+`player/` folder.)
+
 A skin is a folder in `player-skins/` inside your config directory
 (`/config/player-skins` in Docker):
 
