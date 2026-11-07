@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { expect, userEvent, within } from "storybook/test";
 import { SessionProvider } from "@/lib/session";
-import { demoEpisodes, demoMovies } from "@/stories/fixtures";
+import { demoEpisodes, demoMovies, demoUser } from "@/stories/fixtures";
 import { AppLayout } from "./AppLayout";
 import { MediaRow } from "./ItemTile";
 
@@ -47,8 +47,20 @@ export const AccountMenu: Story = {
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await userEvent.click(await c.findByRole("button", { name: "Account menu" }));
-    await expect(c.getByText("Theme")).toBeVisible();
-    await expect(c.getByRole("button", { name: "Midnight" })).toBeVisible();
+    await expect(c.getByRole("link", { name: /User Settings/ })).toBeVisible();
+    await expect(c.getByRole("link", { name: /Admin Settings/ })).toBeVisible();
     await expect(c.getByRole("button", { name: /Sign out/ })).toBeVisible();
+    await expect(c.queryByText("Theme")).not.toBeInTheDocument();
+  },
+};
+
+/** Viewers don't get the Admin Settings link. */
+export const AccountMenuViewer: Story = {
+  parameters: { api: { "api/auth/me": { ...demoUser, role: "viewer" } } },
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await userEvent.click(await c.findByRole("button", { name: "Account menu" }));
+    await expect(c.getByRole("link", { name: /User Settings/ })).toBeVisible();
+    await expect(c.queryByRole("link", { name: /Admin Settings/ })).not.toBeInTheDocument();
   },
 };

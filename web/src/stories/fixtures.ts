@@ -10,6 +10,7 @@ export const builtinThemes: Theme[] = [
     name: "Kinora",
     author: "Built-in",
     scheme: "dark",
+    pair: "kinora-light",
     tokens: {
       background: "#0B1612",
       foreground: "#ECF7F1",
@@ -58,6 +59,7 @@ export const builtinThemes: Theme[] = [
     name: "Midnight",
     author: "Built-in",
     scheme: "dark",
+    pair: "daylight",
     tokens: {
       background: "oklch(0.16 0.01 260)",
       foreground: "oklch(0.97 0 0)",

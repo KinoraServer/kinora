@@ -73,7 +73,7 @@ export function SettingsPage() {
             <Field label="Server name">
               <Input value={form.server_name} onChange={(e) => setForm({ ...form, server_name: e.target.value })} />
             </Field>
-            <Field label="Default theme" help="People can still pick their own in the account menu.">
+            <Field label="Default theme" help="Used by every browser that hasn't picked its own theme.">
               <Select value={form.default_theme} onChange={(e) => setForm({ ...form, default_theme: e.target.value })}>
                 {themes.map((t) => (
                   <option key={t.id} value={t.id}>
