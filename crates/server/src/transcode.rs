@@ -10,6 +10,11 @@
 //! is restarted on a more conservative pipeline (`fallback_profile`) until
 //! there's nothing left to fall back to.
 //!
+//! Copied HEVC goes out as fragmented MP4, which also needs an init segment.
+//! Every ffmpeg run writes its own (`init_N.mp4`); the first complete one is
+//! copied to `init.mp4` and served for the whole session. They are all the
+//! same, since the streams and their timestamps don't depend on the start.
+//!
 //! Idle sessions are killed and their folders deleted. A paused player stops
 //! asking for segments, so it pings `keepalive` to keep its session.
 
@@ -17,11 +22,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile};
-use kinora_core::hls::{segment_count, segment_name, SEGMENT_SECONDS};
-use kinora_core::playback::PlaybackPlan;
+use kinora_core::hls::{run_init_name, segment_count, segment_name, INIT_NAME, SEGMENT_SECONDS};
+use kinora_core::playback::{PlaybackPlan, SegmentFormat};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -55,6 +60,10 @@ struct Session {
     child: Option<Child>,
     /// Segment the current ffmpeg process started at.
     started_at_segment: u32,
+    /// When the current ffmpeg process started.
+    run_started: SystemTime,
+    /// `init.mp4` is in place (fMP4 sessions only).
+    init_ready: bool,
     last_access: Instant,
     created: Instant,
     last_segment: u32,
@@ -138,6 +147,8 @@ impl TranscodeManager {
             dir,
             child: None,
             started_at_segment: 0,
+            run_started: SystemTime::now(),
+            init_ready: false,
             last_access: Instant::now(),
             created: Instant::now(),
             last_segment: 0,
@@ -157,10 +168,44 @@ impl TranscodeManager {
         Some(s.input.user_id.clone())
     }
 
-    pub async fn duration_ms(&self, id: &str) -> Option<u64> {
+    /// Duration and segment packaging, for the playlist.
+    pub async fn playlist_info(&self, id: &str) -> Option<(u64, SegmentFormat)> {
         let s = self.get(id).await?;
         let s = s.lock().await;
-        Some(s.input.duration_ms)
+        Some((s.input.duration_ms, s.input.plan.segments))
+    }
+
+    /// Path of the fMP4 init segment, starting ffmpeg if nothing has written one yet.
+    pub async fn init_segment(&self, id: &str) -> Result<PathBuf, SegmentError> {
+        let session = self.get(id).await.ok_or(SegmentError::NoSession)?;
+        let deadline = Instant::now() + SEGMENT_TIMEOUT;
+        loop {
+            {
+                let mut s = session.lock().await;
+                if s.input.plan.segments != SegmentFormat::Fmp4 {
+                    return Err(SegmentError::OutOfRange);
+                }
+                s.last_access = Instant::now();
+                promote_init(&mut s).await;
+                if s.init_ready {
+                    return Ok(s.dir.join(INIT_NAME));
+                }
+                let running = match s.child.as_mut() {
+                    Some(c) => matches!(c.try_wait(), Ok(None)),
+                    None => false,
+                };
+                if !running {
+                    // Usually the first request of a session: start where the
+                    // player will most likely ask for its first segment.
+                    let start = s.last_segment;
+                    self.start_ffmpeg(&mut s, start).await?;
+                }
+            }
+            if Instant::now() > deadline {
+                return Err(anyhow::anyhow!("timed out waiting for the init segment").into());
+            }
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
     }
 
     /// Mark the session as in use (the player is open, maybe paused) and report its state.
@@ -230,7 +275,8 @@ impl TranscodeManager {
                 let mut s = session.lock().await;
                 s.last_access = Instant::now();
                 s.last_segment = index;
-                let path = s.dir.join(segment_name(index));
+                promote_init(&mut s).await;
+                let path = s.dir.join(segment_name(index, s.input.plan.segments));
                 // ffmpeg writes "seg_N.ts.tmp" and renames when done (hls_flags temp_file),
                 // so if the file exists it's complete.
                 if path.exists() {
@@ -285,6 +331,7 @@ impl TranscodeManager {
 
     async fn start_ffmpeg(&self, s: &mut Session, start_segment: u32) -> anyhow::Result<()> {
         kill(s).await;
+        let run_started = SystemTime::now();
         let output_dir = s.dir.display().to_string();
         let args = hls_args(&HlsJob {
             input: &s.input.file_path,
@@ -322,6 +369,7 @@ impl TranscodeManager {
         }
         s.child = Some(child);
         s.started_at_segment = start_segment;
+        s.run_started = run_started;
         Ok(())
     }
 
@@ -348,6 +396,31 @@ impl TranscodeManager {
 async fn kill(s: &mut Session) {
     if let Some(mut child) = s.child.take() {
         let _ = child.kill().await;
+    }
+}
+
+/// Once the current ffmpeg run has finished its first segment, its init
+/// segment is complete: copy it to `init.mp4` (via a temp file, so a reader
+/// never sees half of it).
+async fn promote_init(s: &mut Session) {
+    if s.init_ready || s.input.plan.segments != SegmentFormat::Fmp4 {
+        return;
+    }
+    let first = s.dir.join(segment_name(s.started_at_segment, SegmentFormat::Fmp4));
+    let written_by_this_run =
+        std::fs::metadata(&first).and_then(|m| m.modified()).map(|t| t >= s.run_started).unwrap_or(false);
+    if !written_by_this_run {
+        return;
+    }
+    let src = s.dir.join(run_init_name(s.started_at_segment));
+    let tmp = s.dir.join(format!("{INIT_NAME}.tmp"));
+    let copied = async {
+        tokio::fs::copy(&src, &tmp).await?;
+        tokio::fs::rename(&tmp, s.dir.join(INIT_NAME)).await
+    };
+    match copied.await {
+        Ok(()) => s.init_ready = true,
+        Err(e) => tracing::warn!(session = %s.dir.display(), error = %e, "couldn't set up the init segment"),
     }
 }
 

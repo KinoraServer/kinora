@@ -7,7 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::playback::{AudioAction, PlaybackPlan, VideoAction};
+use crate::hls::run_init_name;
+use crate::playback::{AudioAction, PlaybackPlan, SegmentFormat, VideoAction};
 
 /// Which hardware video API to use. Picked at startup by probing the machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +45,9 @@ pub enum Tonemapper {
     /// libplacebo on Vulkan: best quality, understands Dolby Vision metadata
     /// (including profile 5).
     Libplacebo,
+    /// tonemap_opencl on the GPU (NVIDIA, Intel): HDR10/HLG and the HDR10
+    /// base layer of Dolby Vision 8.1. Much lighter than zscale on the CPU.
+    Opencl,
     /// zscale + tonemap on the CPU: works everywhere, HDR10/HLG only.
     Zscale,
     /// Neither available: HDR is passed through and colours will look washed out.
@@ -67,10 +71,10 @@ impl Default for HwProfile {
 }
 
 /// The next, more conservative profile to try after ffmpeg crashed with `hw`:
-/// first swap GPU tone mapping (libplacebo) for CPU tone mapping (zscale),
+/// first swap GPU tone mapping (libplacebo, OpenCL) for CPU tone mapping (zscale),
 /// then drop GPU decoding and encoding. `None` once there's nothing left to drop.
 pub fn fallback_profile(hw: &HwProfile) -> Option<HwProfile> {
-    if hw.tonemapper == Tonemapper::Libplacebo {
+    if matches!(hw.tonemapper, Tonemapper::Libplacebo | Tonemapper::Opencl) {
         return Some(HwProfile { tonemapper: Tonemapper::Zscale, vulkan_device: None, ..hw.clone() });
     }
     if hw.accel != HwAccel::None {
@@ -179,10 +183,10 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
         _ => None,
     };
 
-    // libplacebo and VAAPI upload both need a filter device; VAAPI wins and
-    // tone mapping falls back to the CPU in that case.
+    // GPU tone mapping and VAAPI upload both need a filter device; VAAPI wins
+    // and tone mapping falls back to the CPU in that case.
     let tonemapper = match (&job.hw.accel, job.hw.tonemapper) {
-        (HwAccel::Vaapi { .. }, Tonemapper::Libplacebo) => Tonemapper::Zscale,
+        (HwAccel::Vaapi { .. }, Tonemapper::Libplacebo | Tonemapper::Opencl) => Tonemapper::Zscale,
         (_, t) => t,
     };
     let wants_tonemap = encode.map(|e| e.3).unwrap_or(false) && tonemapper != Tonemapper::None;
@@ -197,10 +201,14 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
             a.extend(["-init_hw_device".into(), vulkan_init(job.hw.vulkan_device)]);
             a.extend(["-filter_hw_device", "vk"].map(String::from));
         }
+        if wants_tonemap && tonemapper == Tonemapper::Opencl {
+            a.extend(["-init_hw_device", "opencl=ocl", "-filter_hw_device", "ocl"].map(String::from));
+        }
         // Decode on the GPU, but let ffmpeg copy frames back to system memory
-        // so the same filters work for every vendor. Dolby Vision is decoded
-        // in software when tone mapping so its metadata survives.
-        let hw_decode = !(wants_tonemap && job.source_is_dolby_vision);
+        // so the same filters work for every vendor. Only libplacebo reads
+        // Dolby Vision metadata, and it needs a software decode to keep it;
+        // the other tone mappers use the HDR10 base layer, so the GPU decodes.
+        let hw_decode = !(wants_tonemap && job.source_is_dolby_vision && tonemapper == Tonemapper::Libplacebo);
         if hw_decode {
             match &job.hw.accel {
                 HwAccel::None => {}
@@ -244,7 +252,13 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
                 a.extend(["-g".into(), ((fps * f64::from(seg)).round() as u32).to_string()]);
             }
         }
-        (Some(VideoAction::Copy), None) => a.extend(["-c:v", "copy"].map(String::from)),
+        (Some(VideoAction::Copy), None) => {
+            a.extend(["-c:v", "copy"].map(String::from));
+            if job.plan.segments == SegmentFormat::Fmp4 {
+                // "hvc1" (parameter sets in the init segment) is what Safari and MSE expect.
+                a.extend(["-tag:v", "hvc1"].map(String::from));
+            }
+        }
         (None, None) => a.push("-vn".into()),
         (Some(VideoAction::Encode { .. }), None) => unreachable!(),
     }
@@ -265,13 +279,22 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
 
     // --- HLS output -----------------------------------------------------------
     let dir = job.output_dir.trim_end_matches('/');
+    a.extend(["-f".into(), "hls".into(), "-hls_time".into(), job.segment_seconds.to_string()]);
+    match job.plan.segments {
+        SegmentFormat::MpegTs => a.extend(["-hls_segment_type", "mpegts"].map(String::from)),
+        SegmentFormat::Fmp4 => a.extend([
+            "-hls_segment_type".into(),
+            "fmp4".into(),
+            "-hls_fmp4_init_filename".into(),
+            run_init_name(job.start_segment),
+            // Keep the source timestamps in every fragment (as -copyts does for
+            // MPEG-TS), so segments from a restarted ffmpeg line up with the
+            // playlist and the init segment is the same on every run.
+            "-hls_segment_options".into(),
+            "movflags=+frag_discont".into(),
+        ]),
+    }
     a.extend([
-        "-f".into(),
-        "hls".into(),
-        "-hls_time".into(),
-        job.segment_seconds.to_string(),
-        "-hls_segment_type".into(),
-        "mpegts".into(),
         "-hls_list_size".into(),
         "0".into(),
         "-hls_flags".into(),
@@ -279,7 +302,7 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
         "-start_number".into(),
         job.start_segment.to_string(),
         "-hls_segment_filename".into(),
-        format!("{dir}/seg_%d.ts"),
+        format!("{dir}/seg_%d.{}", if job.plan.segments == SegmentFormat::Fmp4 { "m4s" } else { "ts" }),
         format!("{dir}/ffmpeg.m3u8"),
     ]);
     a
@@ -291,6 +314,12 @@ fn video_filter(w: u32, h: u32, tonemap: bool, tonemapper: Tonemapper, accel: &H
         format!(
             "hwupload,libplacebo=w={w}:h={h}:tonemapping=bt.2390:colorspace=bt709:\
              color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p,hwdownload,format=yuv420p"
+        )
+    } else if tonemap && tonemapper == Tonemapper::Opencl {
+        // Scale on the CPU (a no-op at the same size), tone map on the GPU.
+        format!(
+            "scale={w}:{h},format=p010,hwupload,tonemap_opencl=tonemap=hable:desat=0:\
+             t=bt709:m=bt709:p=bt709:r=tv:format=nv12,hwdownload,format=nv12"
         )
     } else if tonemap && tonemapper == Tonemapper::Zscale {
         format!(
@@ -349,17 +378,22 @@ pub fn encoder_test_args(accel: &HwAccel) -> Vec<String> {
 }
 
 /// A short test of a tone mapper on a synthetic 10-bit HDR frame.
-/// `vulkan_device` is only used by libplacebo.
+/// `vulkan_device` is only used by libplacebo. OpenCL is tested on 4K
+/// frames, since that is the size a broken driver falls over on.
 pub fn tonemap_test_args(tonemapper: Tonemapper, vulkan_device: Option<u32>) -> Option<Vec<String>> {
     let mut a: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"].map(String::from).to_vec();
     if tonemapper == Tonemapper::Libplacebo {
         a.extend(["-init_hw_device".into(), vulkan_init(vulkan_device)]);
         a.extend(["-filter_hw_device", "vk"].map(String::from));
     }
-    a.extend(["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=10", "-t", "0.5", "-vf"].map(String::from));
+    if tonemapper == Tonemapper::Opencl {
+        a.extend(["-init_hw_device", "opencl=ocl", "-filter_hw_device", "ocl"].map(String::from));
+    }
+    let (w, h) = if tonemapper == Tonemapper::Opencl { (3840, 2160) } else { (640, 360) };
+    a.extend(["-f", "lavfi", "-i", &format!("testsrc2=size={w}x{h}:rate=10"), "-t", "0.5", "-vf"].map(String::from));
     let tm = match tonemapper {
         Tonemapper::None => return None,
-        _ => video_filter(640, 360, true, tonemapper, &HwAccel::None),
+        _ => video_filter(w, h, true, tonemapper, &HwAccel::None),
     };
     a.push(format!("format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc,{tm}"));
     a.extend(["-f", "null", "-"].map(String::from));
@@ -390,11 +424,12 @@ pub fn subtitle_vtt_args(input: &str, stream_index: u32) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::playback::{Method, PlaybackPlan};
+    use crate::playback::{Method, PlaybackPlan, SegmentFormat};
 
     fn transcode_plan(tonemap: bool) -> PlaybackPlan {
         PlaybackPlan {
             method: Method::Transcode,
+            segments: SegmentFormat::MpegTs,
             video: Some(VideoAction::Encode {
                 codec: "h264".into(),
                 width: 1920,
@@ -411,6 +446,7 @@ mod tests {
     fn remux_plan() -> PlaybackPlan {
         PlaybackPlan {
             method: Method::Remux,
+            segments: SegmentFormat::MpegTs,
             video: Some(VideoAction::Copy),
             audio_index: Some(1),
             audio: Some(AudioAction::Copy),
@@ -454,6 +490,40 @@ mod tests {
         let args = run(&transcode_plan(true), HwAccel::Nvenc, Tonemapper::Libplacebo, true, 0);
         assert!(!args.contains("-hwaccel cuda"), "{args}");
         assert!(args.contains("libplacebo"));
+    }
+
+    #[test]
+    fn hevc_copy_into_fmp4_with_aac_audio() {
+        let plan = PlaybackPlan {
+            method: Method::Transcode,
+            segments: SegmentFormat::Fmp4,
+            video: Some(VideoAction::Copy),
+            audio_index: Some(1),
+            audio: Some(AudioAction::Encode { codec: "aac".into(), channels: 6, bitrate: 384_000 }),
+            reasons: vec![],
+        };
+        insta::assert_snapshot!(run(&plan, HwAccel::Nvenc, Tonemapper::Zscale, true, 100));
+    }
+
+    #[test]
+    fn dolby_vision_decodes_on_the_gpu_without_libplacebo() {
+        for t in [Tonemapper::Zscale, Tonemapper::Opencl] {
+            let args = run(&transcode_plan(true), HwAccel::Nvenc, t, true, 0);
+            assert!(args.contains("-hwaccel cuda"), "{t:?}: {args}");
+        }
+    }
+
+    #[test]
+    fn nvenc_with_opencl_tonemap() {
+        insta::assert_snapshot!(run(&transcode_plan(true), HwAccel::Nvenc, Tonemapper::Opencl, false, 0));
+    }
+
+    #[test]
+    fn opencl_tonemap_test_uses_4k_frames() {
+        let args = tonemap_test_args(Tonemapper::Opencl, None).unwrap().join(" ");
+        assert!(args.contains("-init_hw_device opencl=ocl -filter_hw_device ocl"), "{args}");
+        assert!(args.contains("testsrc2=size=3840x2160"), "{args}");
+        assert!(args.contains("tonemap_opencl"), "{args}");
     }
 
     #[test]
@@ -551,6 +621,9 @@ mod tests {
         assert_eq!(step2.accel, HwAccel::None);
         assert_eq!(step2.tonemapper, Tonemapper::Zscale);
         assert_eq!(fallback_profile(&step2), None);
+
+        let opencl = HwProfile { accel: HwAccel::Nvenc, tonemapper: Tonemapper::Opencl, vulkan_device: None };
+        assert_eq!(fallback_profile(&opencl).unwrap().tonemapper, Tonemapper::Zscale);
     }
 
     #[test]

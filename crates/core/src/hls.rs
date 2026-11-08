@@ -4,6 +4,11 @@
 //! segments, even though segments are only produced on demand. That gives the
 //! player a correct duration and seek bar from the start; when it asks for a
 //! segment that doesn't exist yet the server (re)starts ffmpeg at that point.
+//!
+//! Segments are MPEG-TS (`seg_N.ts`) or, when HEVC is copied, fragmented MP4
+//! (`seg_N.m4s` plus one `init.mp4` with the codec setup).
+
+use crate::playback::SegmentFormat;
 
 /// Length of every segment except the last.
 pub const SEGMENT_SECONDS: u32 = 6;
@@ -18,26 +23,44 @@ pub fn segment_for_position(position_ms: u64, segment_seconds: u32) -> u32 {
     (position_ms / (u64::from(segment_seconds) * 1000)) as u32
 }
 
-pub fn segment_name(index: u32) -> String {
-    format!("seg_{index}.ts")
+/// The fMP4 init segment the player is given.
+pub const INIT_NAME: &str = "init.mp4";
+
+/// The init segment one ffmpeg run writes (one per run, so a restart never
+/// rewrites a file that is being served).
+pub fn run_init_name(start_segment: u32) -> String {
+    format!("init_{start_segment}.mp4")
 }
 
-/// Parse "seg_12.ts" -> 12.
+pub fn segment_name(index: u32, format: SegmentFormat) -> String {
+    match format {
+        SegmentFormat::MpegTs => format!("seg_{index}.ts"),
+        SegmentFormat::Fmp4 => format!("seg_{index}.m4s"),
+    }
+}
+
+/// Parse "seg_12.ts" or "seg_12.m4s" -> 12.
 pub fn parse_segment_name(name: &str) -> Option<u32> {
-    name.strip_prefix("seg_")?.strip_suffix(".ts")?.parse().ok()
+    let rest = name.strip_prefix("seg_")?;
+    rest.strip_suffix(".ts").or_else(|| rest.strip_suffix(".m4s"))?.parse().ok()
 }
 
-pub fn vod_playlist(duration_ms: u64, segment_seconds: u32) -> String {
+pub fn vod_playlist(duration_ms: u64, segment_seconds: u32, format: SegmentFormat) -> String {
     let count = segment_count(duration_ms, segment_seconds);
     let seg_ms = u64::from(segment_seconds) * 1000;
     let mut out = String::new();
-    out.push_str("#EXTM3U\n#EXT-X-VERSION:3\n");
+    // fMP4 segments need playlist version 7 (EXT-X-MAP outside I-frame playlists).
+    let version = if format == SegmentFormat::Fmp4 { 7 } else { 3 };
+    out.push_str(&format!("#EXTM3U\n#EXT-X-VERSION:{version}\n"));
     out.push_str(&format!("#EXT-X-TARGETDURATION:{segment_seconds}\n"));
     out.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n");
+    if format == SegmentFormat::Fmp4 {
+        out.push_str(&format!("#EXT-X-MAP:URI=\"{INIT_NAME}\"\n"));
+    }
     for i in 0..count {
         let start = u64::from(i) * seg_ms;
         let len_ms = (duration_ms.saturating_sub(start)).min(seg_ms).max(1);
-        out.push_str(&format!("#EXTINF:{:.3},\n{}\n", len_ms as f64 / 1000.0, segment_name(i)));
+        out.push_str(&format!("#EXTINF:{:.3},\n{}\n", len_ms as f64 / 1000.0, segment_name(i, format)));
     }
     out.push_str("#EXT-X-ENDLIST\n");
     out
@@ -59,14 +82,17 @@ mod tests {
 
     #[test]
     fn names() {
-        assert_eq!(parse_segment_name(&segment_name(42)), Some(42));
+        assert_eq!(parse_segment_name(&segment_name(42, SegmentFormat::MpegTs)), Some(42));
+        assert_eq!(parse_segment_name(&segment_name(7, SegmentFormat::Fmp4)), Some(7));
         assert_eq!(parse_segment_name("seg_x.ts"), None);
+        assert_eq!(parse_segment_name("seg_3.mp4"), None);
+        assert_eq!(parse_segment_name(INIT_NAME), None);
         assert_eq!(parse_segment_name("../etc/passwd"), None);
     }
 
     #[test]
     fn playlist_snapshot() {
-        insta::assert_snapshot!(vod_playlist(14_500, 6), @r"
+        insta::assert_snapshot!(vod_playlist(14_500, 6, SegmentFormat::MpegTs), @r"
         #EXTM3U
         #EXT-X-VERSION:3
         #EXT-X-TARGETDURATION:6
@@ -80,5 +106,22 @@ mod tests {
         seg_2.ts
         #EXT-X-ENDLIST
         ");
+    }
+
+    #[test]
+    fn fmp4_playlist_snapshot() {
+        insta::assert_snapshot!(vod_playlist(8_000, 6, SegmentFormat::Fmp4), @r#"
+        #EXTM3U
+        #EXT-X-VERSION:7
+        #EXT-X-TARGETDURATION:6
+        #EXT-X-PLAYLIST-TYPE:VOD
+        #EXT-X-MEDIA-SEQUENCE:0
+        #EXT-X-MAP:URI="init.mp4"
+        #EXTINF:6.000,
+        seg_0.m4s
+        #EXTINF:2.000,
+        seg_1.m4s
+        #EXT-X-ENDLIST
+        "#);
     }
 }
