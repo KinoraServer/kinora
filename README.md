@@ -66,7 +66,9 @@ settings. HTTPS is left to the proxy.
 - GPU detection with a real test encode per backend: NVENC, Quick Sync,
   VAAPI, VideoToolbox, with CPU fallback
 - HDR10 / HLG / Dolby Vision detection; tone mapping to SDR with libplacebo
-  (Vulkan, understands Dolby Vision) or zscale (CPU)
+  (Vulkan, understands Dolby Vision), OpenCL (GPU) or zscale (CPU, capped at 1080p)
+- HEVC is copied into fragmented MP4 HLS for clients that play it (HDR10, HLG and
+  Dolby Vision 8.1 with an HDR screen), so only the audio is re-encoded
 - Dolby Vision profile 8.1 plays as HDR10 on HDR screens without transcoding
 - Embedded text subtitles, audio track switching, resume and watched state
 - Admin dashboard with active streams and activity log

@@ -43,6 +43,10 @@ pub struct Limits {
     pub preferred_audio_language: Option<String>,
     /// Pick a specific audio stream (ffprobe index).
     pub audio_index: Option<u32>,
+    /// Cap the height of transcodes that tone map. The server sets this when
+    /// tone mapping runs on the CPU, where 4K is too slow to keep up.
+    #[serde(default)]
+    pub tonemap_max_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,9 +82,23 @@ pub enum AudioAction {
     Encode { codec: String, channels: u32, bitrate: u64 },
 }
 
+/// How HLS segments are packaged.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentFormat {
+    /// MPEG-TS: works everywhere, but only for H.264 video when copying.
+    #[default]
+    MpegTs,
+    /// Fragmented MP4 (CMAF). Used to copy HEVC, which players don't take in MPEG-TS.
+    Fmp4,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackPlan {
     pub method: Method,
+    /// Packaging of the HLS segments (ignored for direct play).
+    #[serde(default)]
+    pub segments: SegmentFormat,
     pub video: Option<VideoAction>,
     pub audio_index: Option<u32>,
     pub audio: Option<AudioAction>,
@@ -124,9 +142,10 @@ pub fn decide(media: &MediaInfo, caps: &ClientCaps, limits: &Limits) -> Playback
         if video_ok && !over_bitrate {
             VideoAction::Copy
         } else {
-            encode_target(v, caps, limits, media.bitrate)
+            encode_target(v, caps, limits, media.bitrate, &mut reasons)
         }
     });
+    let mut segments = SegmentFormat::MpegTs;
     let mut audio_action = audio_stream.map(|a| if audio_ok { AudioAction::Copy } else { encode_audio(a) });
 
     let all_copy = |v: &Option<VideoAction>, a: &Option<AudioAction>| {
@@ -136,13 +155,21 @@ pub fn decide(media: &MediaInfo, caps: &ClientCaps, limits: &Limits) -> Playback
     let method = if all_copy(&video_action, &audio_action) && container_ok {
         Method::DirectPlay
     } else {
-        // Anything not direct-played goes out as HLS in MPEG-TS segments.
-        // Only H.264 video and a few audio codecs can be copied into that
-        // reliably across players, so re-encode the rest.
+        // Anything not direct-played goes out as HLS. H.264 is copied into
+        // MPEG-TS segments; HEVC is copied into fragmented MP4 segments,
+        // which is what HLS players expect for it. Anything else is re-encoded.
         if let (Some(VideoAction::Copy), Some(v)) = (&video_action, &media.video) {
-            if v.codec != "h264" {
-                reasons.push(format!("{} cannot be copied into HLS for this client", v.codec));
-                video_action = Some(encode_target(v, caps, limits, media.bitrate));
+            if v.codec == "hevc" && hevc_hls_copy_ok(v, caps) {
+                segments = SegmentFormat::Fmp4;
+            } else if v.codec != "h264" {
+                reasons.push(match v.hdr {
+                    HdrFormat::DolbyVision if v.codec == "hevc" => format!(
+                        "Dolby Vision profile {} has no base layer that can be copied into HLS",
+                        v.dv_profile.map(|p| p.to_string()).unwrap_or_else(|| "?".into())
+                    ),
+                    _ => format!("{} cannot be copied into HLS for this client", v.codec),
+                });
+                video_action = Some(encode_target(v, caps, limits, media.bitrate, &mut reasons));
             }
         }
         if let (Some(AudioAction::Copy), Some(a)) = (&audio_action, audio_stream) {
@@ -159,6 +186,7 @@ pub fn decide(media: &MediaInfo, caps: &ClientCaps, limits: &Limits) -> Playback
 
     PlaybackPlan {
         method,
+        segments: if method == Method::DirectPlay { SegmentFormat::MpegTs } else { segments },
         video: video_action,
         audio_index: audio_stream.map(|a| a.index),
         audio: audio_action,
@@ -166,7 +194,21 @@ pub fn decide(media: &MediaInfo, caps: &ClientCaps, limits: &Limits) -> Playback
     }
 }
 
-/// Audio codecs that can be stream-copied into MPEG-TS HLS segments.
+/// Can this HEVC stream be copied into fMP4 HLS segments for this client?
+///
+/// The segments carry no Dolby Vision configuration (ffmpeg only writes it
+/// with `-strict unofficial`), so players see plain HEVC. That's right for
+/// HDR10, HLG and SDR, and for Dolby Vision with a compatible base layer
+/// (profile 8.1 shows as HDR10). Profile 5 has no such base layer: copied, it
+/// shows green and purple even on a Dolby Vision screen, so it's tone mapped.
+fn hevc_hls_copy_ok(v: &VideoStream, caps: &ClientCaps) -> bool {
+    match v.hdr {
+        HdrFormat::DolbyVision => base_layer_compatible(v, caps),
+        _ => hdr_compatible(v, caps),
+    }
+}
+
+/// Audio codecs that can be stream-copied into HLS segments.
 const HLS_COPY_AUDIO: &[&str] = &["aac", "mp3", "ac3", "eac3"];
 
 fn container_matches(probe_name: &str, client: &str) -> bool {
@@ -245,20 +287,33 @@ pub fn hdr_compatible(v: &VideoStream, caps: &ClientCaps) -> bool {
         HdrFormat::Sdr => true,
         HdrFormat::Hdr10 => caps.hdr10,
         HdrFormat::Hlg => caps.hlg,
-        HdrFormat::DolbyVision => {
-            caps.dolby_vision
-                || match v.dv_compat_id {
-                    Some(1) => caps.hdr10,
-                    Some(4) => caps.hlg,
-                    Some(2) => true,
-                    _ => false,
-                }
-        }
+        HdrFormat::DolbyVision => caps.dolby_vision || base_layer_compatible(v, caps),
     }
 }
 
-fn encode_target(v: &VideoStream, caps: &ClientCaps, limits: &Limits, source_bitrate: Option<u64>) -> VideoAction {
-    let max_h = caps.max_height.unwrap_or(u32::MAX);
+/// Can the client show the Dolby Vision file's base layer on its own?
+fn base_layer_compatible(v: &VideoStream, caps: &ClientCaps) -> bool {
+    match v.dv_compat_id {
+        Some(1) => caps.hdr10,
+        Some(4) => caps.hlg,
+        Some(2) => true,
+        _ => false,
+    }
+}
+
+fn encode_target(
+    v: &VideoStream,
+    caps: &ClientCaps,
+    limits: &Limits,
+    source_bitrate: Option<u64>,
+    reasons: &mut Vec<String>,
+) -> VideoAction {
+    let tonemap = v.hdr != HdrFormat::Sdr;
+    let mut max_h = caps.max_height.unwrap_or(u32::MAX);
+    if let Some(cap) = limits.tonemap_max_height.filter(|cap| tonemap && v.height > *cap && *cap < max_h) {
+        reasons.push(format!("tone mapping runs on the CPU here, so the transcode is capped at {cap}p"));
+        max_h = cap;
+    }
     let height = v.height.min(max_h).max(1);
     let width = if v.height == 0 {
         v.width
@@ -283,7 +338,7 @@ fn encode_target(v: &VideoStream, caps: &ClientCaps, limits: &Limits, source_bit
         bitrate = bitrate.min(max.saturating_sub(400_000).max(500_000));
     }
 
-    VideoAction::Encode { codec: "h264".into(), width, height, bitrate, tonemap: v.hdr != HdrFormat::Sdr }
+    VideoAction::Encode { codec: "h264".into(), width, height, bitrate, tonemap }
 }
 
 #[cfg(test)]
@@ -485,5 +540,73 @@ mod tests {
         v.bit_depth = 10;
         let f = file("mov", v, audio("aac", 2));
         assert_eq!(decide(&f, &chrome(), &Limits::default()).method, Method::Transcode);
+    }
+
+    /// Chrome on a Mac with an HDR screen: HEVC through MSE, but no E-AC3.
+    fn chrome_mac_hdr() -> ClientCaps {
+        ClientCaps {
+            video_codecs: vec!["h264".into(), "hevc".into(), "vp9".into(), "av1".into()],
+            max_audio_channels: 6,
+            hdr10: true,
+            hlg: true,
+            ..chrome()
+        }
+    }
+
+    #[test]
+    fn dv_hdr10_mkv_copies_hevc_into_fmp4_and_only_encodes_audio() {
+        let f = file("matroska", video("hevc", 2160, HdrFormat::DolbyVision, Some((8, 1))), audio("eac3", 6));
+        let p = decide(&f, &chrome_mac_hdr(), &Limits::default());
+        assert_eq!(p.method, Method::Transcode);
+        assert_eq!(p.video, Some(VideoAction::Copy));
+        assert_eq!(p.segments, SegmentFormat::Fmp4);
+        assert_eq!(p.audio, Some(AudioAction::Encode { codec: "aac".into(), channels: 6, bitrate: 384_000 }));
+    }
+
+    #[test]
+    fn hevc_with_aac_is_remuxed_into_fmp4() {
+        let f = file("matroska", video("hevc", 2160, HdrFormat::Hdr10, None), audio("aac", 2));
+        let p = decide(&f, &chrome_mac_hdr(), &Limits::default());
+        assert_eq!((p.method, p.segments), (Method::Remux, SegmentFormat::Fmp4));
+    }
+
+    #[test]
+    fn h264_remux_stays_mpegts() {
+        let f = file("matroska", video("h264", 1080, HdrFormat::Sdr, None), audio("aac", 2));
+        assert_eq!(decide(&f, &chrome(), &Limits::default()).segments, SegmentFormat::MpegTs);
+    }
+
+    #[test]
+    fn hdr_hevc_on_sdr_screen_is_still_tone_mapped() {
+        let f = file("matroska", video("hevc", 2160, HdrFormat::Hdr10, None), audio("aac", 2));
+        let caps = ClientCaps { hdr10: false, hlg: false, ..chrome_mac_hdr() };
+        let p = decide(&f, &caps, &Limits::default());
+        assert!(matches!(p.video, Some(VideoAction::Encode { tonemap: true, .. })));
+        assert_eq!(p.segments, SegmentFormat::MpegTs);
+    }
+
+    #[test]
+    fn dv_profile5_is_never_copied_into_hls_even_for_dv_clients() {
+        let f = file("matroska", video("hevc", 2160, HdrFormat::DolbyVision, Some((5, 0))), audio("aac", 2));
+        let p = decide(&f, &safari(), &Limits::default());
+        assert!(matches!(p.video, Some(VideoAction::Encode { tonemap: true, .. })));
+        assert!(p.reasons.iter().any(|r| r.contains("no base layer")), "{:?}", p.reasons);
+    }
+
+    #[test]
+    fn cpu_tone_mapping_is_capped() {
+        let f = file("matroska", video("hevc", 2160, HdrFormat::Hdr10, None), audio("aac", 2));
+        let limits = Limits { tonemap_max_height: Some(1080), ..Default::default() };
+        let p = decide(&f, &chrome(), &limits);
+        match p.video.unwrap() {
+            VideoAction::Encode { width, height, tonemap, .. } => {
+                assert_eq!((width, height, tonemap), (1920, 1080, true))
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(p.reasons.iter().any(|r| r.contains("capped at 1080p")));
+        // SDR transcodes aren't affected.
+        let f = file("matroska", video("hevc", 2160, HdrFormat::Sdr, None), audio("aac", 2));
+        assert!(matches!(decide(&f, &chrome(), &limits).video, Some(VideoAction::Encode { height: 2160, .. })));
     }
 }

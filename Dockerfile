@@ -33,16 +33,18 @@ FROM debian:trixie-slim
 ARG TARGETARCH
 
 # FFmpeg from Debian is built with NVENC/NVDEC, Quick Sync (oneVPL), VAAPI,
-# Vulkan + libplacebo (Dolby Vision tone mapping) and zimg.
+# Vulkan + libplacebo (Dolby Vision tone mapping), OpenCL (GPU tone mapping) and zimg.
 # Drivers: Mesa for AMD (VAAPI + Vulkan) and Intel Vulkan; Intel media driver
 # + oneVPL runtime for Quick Sync on amd64. NVIDIA drivers are injected by the
-# NVIDIA container runtime at start.
+# NVIDIA container runtime at start; the ICD file below points the OpenCL loader
+# at NVIDIA's OpenCL library when it's there (harmless when it isn't).
 RUN sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
  && apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates ffmpeg mesa-va-drivers mesa-vulkan-drivers libvulkan1 \
+ && apt-get install -y --no-install-recommends ca-certificates ffmpeg mesa-va-drivers mesa-vulkan-drivers libvulkan1 ocl-icd-libopencl1 \
  && if [ "$TARGETARCH" = "amd64" ]; then \
       apt-get install -y --no-install-recommends intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 ; \
     fi \
+ && mkdir -p /etc/OpenCL/vendors && echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=server /kinora /usr/local/bin/kinora

@@ -180,6 +180,8 @@ export interface PlayerSkin {
 export interface PlaybackPlan {
   method: "direct_play" | "remux" | "transcode";
   reasons: string[];
+  /** Packaging of the HLS segments: MPEG-TS, or fragmented MP4 when HEVC is copied. */
+  segments?: "mpeg_ts" | "fmp4";
   video: { kind: "copy" } | { kind: "encode"; width: number; height: number; bitrate: number; tonemap: boolean } | null;
   audio: { kind: "copy" } | { kind: "encode"; codec: string; channels: number } | null;
   audio_index: number | null;

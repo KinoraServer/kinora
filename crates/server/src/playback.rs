@@ -6,7 +6,8 @@ use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
-use kinora_core::hls::{parse_segment_name, vod_playlist, SEGMENT_SECONDS};
+use kinora_core::ffmpeg::Tonemapper;
+use kinora_core::hls::{parse_segment_name, vod_playlist, INIT_NAME, SEGMENT_SECONDS};
 use kinora_core::media::{HdrFormat, MediaInfo};
 use kinora_core::playback::{decide, ClientCaps, Limits, Method, PlaybackPlan};
 use kinora_core::roles::Role;
@@ -111,7 +112,10 @@ async fn start(
         None
     };
     let audio_index = req.audio_index.or(auto_tracks.as_ref().and_then(|a| a.audio_index));
-    let limits = Limits { max_bitrate: req.max_bitrate, audio_index, ..Default::default() };
+    let hw = state.hardware.read().await.profile.clone();
+    // CPU tone mapping can't keep up with 4K, so those transcodes go out at 1080p.
+    let tonemap_max_height = (hw.tonemapper == Tonemapper::Zscale).then_some(1080);
+    let limits = Limits { max_bitrate: req.max_bitrate, audio_index, tonemap_max_height, ..Default::default() };
     let mut caps = req.caps;
     if req.force_transcode {
         caps.containers.clear();
@@ -136,7 +140,6 @@ async fn start(
         })
         .collect();
 
-    let hw = state.hardware.read().await.profile.clone();
     let title: String =
         sqlx::query_scalar("SELECT title FROM items WHERE id = ?").bind(&file.item_id).fetch_one(&state.db).await?;
 
@@ -204,10 +207,10 @@ async fn check_session(state: &AppState, user: &AuthUser, session: &str) -> AppR
 
 async fn playlist(State(state): State<AppState>, user: AuthUser, Path(session): Path<String>) -> AppResult<Response> {
     check_session(&state, &user, &session).await?;
-    let duration = state.transcodes.duration_ms(&session).await.ok_or(AppError::NotFound)?;
+    let (duration, segments) = state.transcodes.playlist_info(&session).await.ok_or(AppError::NotFound)?;
     Ok((
         [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl"), (header::CACHE_CONTROL, "no-cache")],
-        vod_playlist(duration, SEGMENT_SECONDS),
+        vod_playlist(duration, SEGMENT_SECONDS, segments),
     )
         .into_response())
 }
@@ -218,18 +221,24 @@ async fn segment(
     Path((session, segment)): Path<(String, String)>,
 ) -> AppResult<Response> {
     check_session(&state, &user, &session).await?;
-    let index = parse_segment_name(&segment).ok_or(AppError::NotFound)?;
+    let result = if segment == INIT_NAME {
+        state.transcodes.init_segment(&session).await
+    } else {
+        let index = parse_segment_name(&segment).ok_or(AppError::NotFound)?;
+        state.transcodes.segment(&session, index).await
+    };
     // Only a missing session or segment is a 404. A transcoder failure is a
     // 500, so the player reports a server problem instead of a missing file.
-    let path = state.transcodes.segment(&session, index).await.map_err(|e| {
-        tracing::warn!(session, index, error = %e, "segment failed");
+    let path = result.map_err(|e| {
+        tracing::warn!(session, segment, error = %e, "segment failed");
         match e {
             SegmentError::NoSession | SegmentError::OutOfRange => AppError::NotFound,
             SegmentError::Failed(e) => AppError::Internal(e),
         }
     })?;
+    let content_type = if segment.ends_with(".ts") { "video/mp2t" } else { "video/mp4" };
     let bytes = tokio::fs::read(&path).await?;
-    Ok(([(header::CONTENT_TYPE, "video/mp2t")], bytes).into_response())
+    Ok(([(header::CONTENT_TYPE, content_type)], bytes).into_response())
 }
 
 /// The player calls this every so often (also while paused) so the session

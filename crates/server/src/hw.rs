@@ -133,8 +133,13 @@ pub async fn detect(ffmpeg: &str, preference: &str) -> HardwareReport {
     } else {
         find_vulkan_gpu(ffmpeg).await
     };
+    // Best first: libplacebo (understands Dolby Vision), then OpenCL on the
+    // GPU, then zscale on the CPU.
     let mut tonemapper = Tonemapper::None;
-    for t in [Tonemapper::Libplacebo, Tonemapper::Zscale] {
+    for t in [Tonemapper::Libplacebo, Tonemapper::Opencl, Tonemapper::Zscale] {
+        if t == Tonemapper::Opencl && preference == "none" {
+            continue;
+        }
         if t == Tonemapper::Libplacebo {
             if let Err(e) = &vulkan {
                 report.tests.push(BackendTest {
@@ -150,6 +155,7 @@ pub async fn detect(ffmpeg: &str, preference: &str) -> HardwareReport {
         let ok = result.is_ok();
         let name = match t {
             Tonemapper::Libplacebo => "Tone mapping: libplacebo (Vulkan)",
+            Tonemapper::Opencl => "Tone mapping: OpenCL (GPU)",
             _ => "Tone mapping: zscale (CPU)",
         };
         report.tests.push(BackendTest { name: name.into(), ok, error: result.err() });
