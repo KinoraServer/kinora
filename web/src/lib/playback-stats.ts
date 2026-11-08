@@ -430,7 +430,10 @@ export class PlaybackStats {
     const st = this.status;
     const transcoder: [string, string][] = st
       ? [
-          [i18n.t("player.trace.ffmpeg_running"), yesNo(st.running)],
+          [
+            i18n.t("player.trace.ffmpeg_running"),
+            st.throttled ? i18n.t("player.trace.ffmpeg_throttled") : yesNo(st.running),
+          ],
           [i18n.t("player.trace.encoder"), st.hw],
           [
             i18n.t("player.trace.started_at_segment"),

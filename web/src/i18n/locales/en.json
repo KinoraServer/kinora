@@ -212,6 +212,7 @@
       "recoveries": "recoveries",
       "open_for": "open for",
       "ffmpeg_running": "ffmpeg running",
+      "ffmpeg_throttled": "paused, far enough ahead",
       "encoder": "encoder",
       "started_at_segment": "started at segment",
       "last_segment_requested": "last segment requested",

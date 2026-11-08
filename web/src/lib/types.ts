@@ -204,6 +204,8 @@ export interface SubtitleTrack {
 /** `POST api/hls/{session}/keepalive`: the transcoder's live state. */
 export interface SessionStatus {
   running: boolean;
+  /** Paused on purpose: far enough ahead of the player. */
+  throttled?: boolean;
   started_at_segment: number;
   last_requested_segment: number;
   transcoded_through: number | null;

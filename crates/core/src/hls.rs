@@ -66,6 +66,47 @@ pub fn vod_playlist(duration_ms: u64, segment_seconds: u32, format: SegmentForma
     out
 }
 
+/// ffmpeg is paused once it is this many segments ahead of the player
+/// (2 minutes). Copying video runs many times faster than real time, and
+/// without a limit it would write the whole file out (often into RAM).
+pub const MAX_SEGMENTS_AHEAD: u32 = 20;
+/// A paused ffmpeg is started again when the player gets this close to the
+/// last finished segment (1 minute of buffer left).
+pub const RESUME_SEGMENTS_AHEAD: u32 = 10;
+/// Finished segments kept behind the player, for short seeks back.
+pub const KEEP_SEGMENTS_BEHIND: u32 = 10;
+
+/// What to do with a session's ffmpeg, checked every couple of seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Throttle {
+    Keep,
+    /// Far enough ahead: stop ffmpeg.
+    Pause,
+    /// The player is catching up with a paused ffmpeg: start it at this segment.
+    Resume(u32),
+}
+
+/// `produced` is the highest finished segment of the current (or last) run.
+pub fn throttle(running: bool, paused: bool, last_requested: u32, produced: Option<u32>, count: u32) -> Throttle {
+    let Some(produced) = produced else { return Throttle::Keep };
+    if running && produced >= last_requested + MAX_SEGMENTS_AHEAD {
+        return Throttle::Pause;
+    }
+    let next = produced + 1;
+    if !running && paused && next < count && produced < last_requested + RESUME_SEGMENTS_AHEAD {
+        return Throttle::Resume(next);
+    }
+    Throttle::Keep
+}
+
+/// Finished segments that can be deleted: well behind the player, or far
+/// ahead of it (left over from before a seek back).
+pub fn segments_to_delete(existing: &[u32], last_requested: u32) -> Vec<u32> {
+    let keep_from = last_requested.saturating_sub(KEEP_SEGMENTS_BEHIND);
+    let keep_to = last_requested + MAX_SEGMENTS_AHEAD + RESUME_SEGMENTS_AHEAD;
+    existing.iter().copied().filter(|&i| i < keep_from || i > keep_to).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +164,33 @@ mod tests {
         seg_1.m4s
         #EXT-X-ENDLIST
         "#);
+    }
+
+    #[test]
+    fn throttle_pauses_far_ahead_and_resumes_before_the_buffer_runs_out() {
+        // Running, not far enough ahead yet.
+        assert_eq!(throttle(true, false, 100, Some(119), 1000), Throttle::Keep);
+        assert_eq!(throttle(true, false, 100, Some(120), 1000), Throttle::Pause);
+        // Paused, plenty left.
+        assert_eq!(throttle(false, true, 105, Some(120), 1000), Throttle::Keep);
+        // Paused, the player is within a minute of the end of what's ready.
+        assert_eq!(throttle(false, true, 111, Some(120), 1000), Throttle::Resume(121));
+        // Not paused by us (crashed, or never started): leave it to the segment handler.
+        assert_eq!(throttle(false, false, 111, Some(120), 1000), Throttle::Keep);
+        // Everything is done.
+        assert_eq!(throttle(false, true, 995, Some(999), 1000), Throttle::Keep);
+        assert_eq!(throttle(true, false, 0, None, 1000), Throttle::Keep);
+    }
+
+    #[test]
+    fn deletes_segments_far_behind_and_far_ahead() {
+        let existing: Vec<u32> = (0..200).collect();
+        let gone = segments_to_delete(&existing, 100);
+        assert_eq!(gone.first(), Some(&0));
+        assert!(gone.contains(&89));
+        assert!(!gone.contains(&90));
+        assert!(!gone.contains(&130));
+        assert!(gone.contains(&131));
+        assert!(segments_to_delete(&[0, 1, 2], 3).is_empty());
     }
 }

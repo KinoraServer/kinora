@@ -15,6 +15,11 @@
 //! copied to `init.mp4` and served for the whole session. They are all the
 //! same, since the streams and their timestamps don't depend on the start.
 //!
+//! ffmpeg is paused (stopped) once it is about two minutes ahead of the
+//! player and started again before the player runs out, and segments well
+//! behind the player are deleted, so a session's folder stays small. That
+//! matters because the transcode folder is often in RAM (/tmp on Unraid).
+//!
 //! Idle sessions are killed and their folders deleted. A paused player stops
 //! asking for segments, so it pings `keepalive` to keep its session.
 
@@ -25,7 +30,9 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile};
-use kinora_core::hls::{run_init_name, segment_count, segment_name, INIT_NAME, SEGMENT_SECONDS};
+use kinora_core::hls::{
+    run_init_name, segment_count, segment_name, segments_to_delete, throttle, Throttle, INIT_NAME, SEGMENT_SECONDS,
+};
 use kinora_core::playback::{PlaybackPlan, SegmentFormat};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -39,6 +46,8 @@ use crate::db::new_id;
 const MAX_WAIT_AHEAD: u32 = 4;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const SEGMENT_TIMEOUT: Duration = Duration::from_secs(60);
+/// How often sessions are checked for throttling and cleanup.
+const THROTTLE_INTERVAL: Duration = Duration::from_secs(2);
 
 pub struct SessionInput {
     pub user_id: String,
@@ -64,6 +73,8 @@ struct Session {
     run_started: SystemTime,
     /// `init.mp4` is in place (fMP4 sessions only).
     init_ready: bool,
+    /// ffmpeg was stopped because it got far enough ahead of the player.
+    throttled: bool,
     last_access: Instant,
     created: Instant,
     last_segment: u32,
@@ -100,6 +111,8 @@ pub struct SessionInfo {
 pub struct SessionStatus {
     /// Is an ffmpeg process running right now?
     pub running: bool,
+    /// ffmpeg is paused because it is far enough ahead of the player.
+    pub throttled: bool,
     /// Segment the current ffmpeg process started at (it restarts on a seek).
     pub started_at_segment: u32,
     /// Last segment the player asked for.
@@ -130,9 +143,14 @@ impl TranscodeManager {
         let mgr = TranscodeManager { root, ffmpeg, sessions: Arc::default() };
         let reaper = mgr.clone();
         tokio::spawn(async move {
+            let mut ticks: u32 = 0;
             loop {
-                tokio::time::sleep(Duration::from_secs(15)).await;
-                reaper.reap_idle().await;
+                tokio::time::sleep(THROTTLE_INTERVAL).await;
+                reaper.throttle_all().await;
+                ticks = ticks.wrapping_add(1);
+                if ticks.is_multiple_of(8) {
+                    reaper.reap_idle().await;
+                }
             }
         });
         mgr
@@ -149,6 +167,7 @@ impl TranscodeManager {
             started_at_segment: 0,
             run_started: SystemTime::now(),
             init_ready: false,
+            throttled: false,
             last_access: Instant::now(),
             created: Instant::now(),
             last_segment: 0,
@@ -219,6 +238,7 @@ impl TranscodeManager {
         };
         Some(SessionStatus {
             running,
+            throttled: s.throttled,
             started_at_segment: s.started_at_segment,
             last_requested_segment: s.last_segment,
             transcoded_through: latest_segment(&s.dir, s.started_at_segment),
@@ -370,6 +390,46 @@ impl TranscodeManager {
         s.child = Some(child);
         s.started_at_segment = start_segment;
         s.run_started = run_started;
+        s.throttled = false;
+        Ok(())
+    }
+
+    /// Pause, resume and clean up every session (see `kinora_core::hls::throttle`).
+    async fn throttle_all(&self) {
+        let sessions: Vec<Arc<Mutex<Session>>> = self.sessions.lock().await.values().cloned().collect();
+        for session in sessions {
+            // A session busy serving a segment is checked next time.
+            let Ok(mut s) = session.try_lock() else { continue };
+            if let Err(e) = self.throttle_session(&mut s).await {
+                tracing::warn!(session = %s.dir.display(), error = %e, "couldn't resume the transcoder");
+            }
+        }
+    }
+
+    async fn throttle_session(&self, s: &mut Session) -> anyhow::Result<()> {
+        let running = match s.child.as_mut() {
+            Some(c) => matches!(c.try_wait(), Ok(None)),
+            None => false,
+        };
+        let produced = latest_segment(&s.dir, s.started_at_segment);
+        let count = segment_count(s.input.duration_ms, SEGMENT_SECONDS);
+        match throttle(running, s.throttled, s.last_segment, produced, count) {
+            Throttle::Keep => {}
+            Throttle::Pause => {
+                tracing::info!(session = %s.dir.display(), produced, requested = s.last_segment, "pausing transcoder, far enough ahead");
+                kill(s).await;
+                s.throttled = true;
+            }
+            Throttle::Resume(from) => {
+                tracing::info!(session = %s.dir.display(), from, requested = s.last_segment, "resuming transcoder");
+                self.start_ffmpeg(s, from).await?;
+            }
+        }
+        let existing = finished_segments(&s.dir);
+        for index in segments_to_delete(&existing, s.last_segment) {
+            // The file may be open on Windows; it goes next time.
+            let _ = std::fs::remove_file(s.dir.join(segment_name(index, s.input.plan.segments)));
+        }
         Ok(())
     }
 
@@ -424,12 +484,16 @@ async fn promote_init(s: &mut Session) {
     }
 }
 
-/// Highest finished segment index >= `from` in the session folder.
-fn latest_segment(dir: &Path, from: u32) -> Option<u32> {
-    std::fs::read_dir(dir)
-        .ok()?
+/// Indexes of the finished segments in the session folder.
+fn finished_segments(dir: &Path) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    entries
         .filter_map(|e| e.ok())
         .filter_map(|e| kinora_core::hls::parse_segment_name(&e.file_name().to_string_lossy()))
-        .filter(|n| *n >= from)
-        .max()
+        .collect()
+}
+
+/// Highest finished segment index >= `from` in the session folder.
+fn latest_segment(dir: &Path, from: u32) -> Option<u32> {
+    finished_segments(dir).into_iter().filter(|n| *n >= from).max()
 }
