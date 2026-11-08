@@ -40,9 +40,7 @@
   },
   "home": {
     "empty_title": "Nothing here yet",
-    "empty_admin_a": "Add a library in",
-    "empty_admin_link": "Admin → Libraries",
-    "empty_admin_b": "to start scanning your media.",
+    "empty_admin": "Add a library in <link>Admin → Libraries</link> to start scanning your media.",
     "empty_viewer": "Ask the server owner to add a library."
   },
   "library": {
@@ -62,7 +60,9 @@
   },
   "search": {
     "placeholder": "Search movies and shows",
-    "nothing_found": "Nothing found for \"{{query}}\""
+    "nothing_found": "Nothing found for \"{{query}}\"",
+    "count_one": "{{count}} result",
+    "count_other": "{{count}} results"
   },
   "item": {
     "series": "Series",
@@ -78,7 +78,13 @@
     "audio_info": "Audio: {{details}}",
     "subtitle_info": "Subtitles: {{details}}",
     "seasons": "Seasons",
-    "episodes": "Episodes"
+    "episodes": "Episodes",
+    "time_left": "{{time}} left",
+    "play_from_start": "Play from the start",
+    "toggle_played": "Mark watched or unwatched",
+    "next_season": "Next season",
+    "prev_season": "Previous season",
+    "subtitles_list": "Subtitles: {{list}}"
   },
   "player": {
     "pause": "Pause",
@@ -128,7 +134,9 @@
     "method_remux": "Direct stream",
     "method_transcode": "Transcoding",
     "tracks_none": "no remembered choice",
-    "tracks_from": "your last choice for this {{scope}}",
+    "tracks_from_season": "your last choice for this season",
+    "tracks_from_series": "your last choice for this show",
+    "tracks_from_library": "your last choice for this library",
     "info": {
       "playback": "Playback",
       "video": "Video",
@@ -255,7 +263,8 @@
         "description": "Picture, name and password"
       },
       "display": {
-        "label": "Display"
+        "label": "Display",
+        "description": "App skin"
       },
       "audio": {
         "label": "Audio"
@@ -270,7 +279,11 @@
       "choose": "Choose a profile picture",
       "change": "Change picture",
       "upload": "Upload picture",
-      "remove": "Remove"
+      "remove": "Remove",
+      "not_image": "Pick an image file.",
+      "unreadable": "That image couldn't be read. Try a PNG or JPEG.",
+      "no_resize": "Your browser can't resize images.",
+      "prepare_failed": "Couldn't prepare the picture."
     },
     "name": {
       "title": "Name",
@@ -288,6 +301,13 @@
       "mismatch": "The new passwords don't match.",
       "change": "Change password",
       "changed": "Password changed."
+    },
+    "display": {
+      "app_skin_title": "App skin",
+      "app_skin_help": "How the app looks for you, on every device you sign in on.",
+      "same_as_server": "Same as the server ({{name}})",
+      "the_standard_look": "the standard look",
+      "safe_mode_help": "Always use Kinora's standard look here, whatever skin is chosen. Only affects this browser."
     }
   },
   "admin": {
@@ -381,12 +401,11 @@
     "modules": {
       "theme": "Theme",
       "theme_help": "Pick a mode and a theme for this browser. The default for everyone else is under Settings.",
-      "theme_doc_a": "Themes are small JSON files of colours and sizes. To add one, start from",
-      "theme_doc_b": "copy it to a new name ending in",
-      "theme_doc_c": ", change the id, name and colours. See docs/themes.md for every token.",
+      "theme_doc": "Themes are small JSON files of colours and sizes. To add one, start from <code>{{sample}}</code> in your config directory: copy it to a new name ending in <code>.json</code>, change the id, name and colours. See docs/themes.md for every token.",
       "player_title": "Player style",
       "player_help": "The video player every app and browser on this server uses. Pick a built-in style or an installed custom skin.",
       "follow_theme": "Follow the theme ({{name}})",
+      "follow_app_skin": "Follow the app skin ({{name}})",
       "style_desc_minimal": "A slim bar along the bottom.",
       "style_desc_cinematic": "Big centred controls and large type.",
       "style_desc_floating": "A rounded glass bar floating over the video.",
@@ -400,6 +419,61 @@
       "forget_tracks": "Forget my track choices",
       "forget_done": "Done. Every show starts with its default tracks until you pick again.",
       "forget_hint": "Only clears your own choices."
+    },
+    "app_skins": {
+      "title": "App skins",
+      "help": "A skin replaces the layout of the navigation, home, library, detail and search pages with its own markup and CSS. Admin pages always keep the standard look.",
+      "refresh": "Check the skins folder again",
+      "look_for_everyone": "Look for everyone",
+      "look_for_everyone_help": "Viewers see this unless they turned skins off in their browser.",
+      "missing": "{{id}} (missing or broken, standard look shown)",
+      "none_installed": "No skins installed yet. Add a starter below or upload one.",
+      "add": "Add a skin",
+      "start_from": "Start from {{name}}",
+      "starter_marquee": "Marquee: a full-bleed streaming look with a rotating hero and rails.",
+      "starter_blank": "Blank: the smallest working skin, to start from scratch.",
+      "starter_added": "Added \"{{id}}\". Its files are in app-skins/{{id}}/ in your config folder, ready to edit.",
+      "upload_folder": "Upload a folder",
+      "upload_zip": "Upload a .zip",
+      "uploading": "Uploading and checking…",
+      "folder_help": "Skins are folders in <code>app-skins/</code> in your config directory. Edits there show up when you press refresh, or within two seconds while previewing. To check a skin from a terminal, run <code>{{command}}</code>. See docs/app-skins.md.",
+      "safe_mode_help": "Shows the standard look here only. You can also add <code>?skin=off</code> to the address (<code>#/?skin=off</code>), handy if a skin ever gets in your way.",
+      "no_files": "No files found.",
+      "upload_file_failed": "Uploading {{path}} failed.",
+      "already_installed": "That skin is already installed",
+      "replace_confirm": "{{reason}}. Replace it?",
+      "has_errors_upload": "The skin has errors, so it wasn't installed. Fix these and upload it again:",
+      "upload_failed": "The upload failed.",
+      "installed": "Installed \"{{id}}\".",
+      "installed_replaced": "Installed \"{{id}}\" (replaced the old copy).",
+      "in_use": "In use",
+      "previewing": "Previewing",
+      "has_errors": "Has errors",
+      "pages_left_out_one": "{{count}} page left out",
+      "pages_left_out_other": "{{count}} pages left out",
+      "warnings_one": "{{count}} warning",
+      "warnings_other": "{{count}} warnings",
+      "errors_one": "{{count}} error",
+      "errors_other": "{{count}} errors",
+      "by_author": "by {{author}}",
+      "folder": "folder app-skins/{{folder}}",
+      "for_devices": "for {{devices}}",
+      "every_device": "every device",
+      "includes_player": "includes a player",
+      "use_for_everyone": "Use for everyone",
+      "stop_preview": "Stop preview",
+      "preview": "Preview",
+      "preview_title": "See it yourself first. Nobody else sees a preview.",
+      "delete_confirm": "Delete the {{name}} skin folder (app-skins/{{folder}})? This can't be undone.",
+      "made_for_theme": "Made for the {{name}} theme.",
+      "make_default_theme": "Make it the default theme",
+      "runtime_errors": "Pages that failed in viewers' browsers ({{count}})",
+      "runtime_errors_help": "Those viewers got the standard page instead. Errors are kept in memory until the server restarts.",
+      "checker_found": "Checker found {{errors}} and {{warnings}}",
+      "options": "Options",
+      "color_picker": "{{label}} picker",
+      "color_placeholder": "empty: the theme's colour",
+      "save_options": "Save options"
     }
   },
   "theme": {
@@ -407,7 +481,8 @@
     "light": "Light",
     "dark": "Dark",
     "system": "System",
-    "always_scheme": "{{name}} always uses {{scheme}} mode.",
+    "always_light": "{{name}} always uses light mode.",
+    "always_dark": "{{name}} always uses dark mode.",
     "group_paired": "Light & dark",
     "follow_mode": "Follow the mode above",
     "group_dark": "Dark",
@@ -419,5 +494,26 @@
     "path": "Folder path",
     "use": "Use this folder",
     "empty": "No sub-folders."
+  },
+  "skins": {
+    "standard_look": "Kinora's standard look",
+    "safe_mode": "Turn off skins in this browser",
+    "previewing": "Previewing <strong>{{name}}</strong>. Only you see this.",
+    "previewing_reason": "Previewing <strong>{{name}}</strong> ({{reason}})",
+    "admin_link": "Skins",
+    "stop_preview": "Stop preview",
+    "browser_too_old": "This browser is too old for app skins.",
+    "device_phone": "This skin doesn't support phones.",
+    "device_tablet": "This skin doesn't support tablets.",
+    "device_desktop": "This skin doesn't support desktops.",
+    "device_tv": "This skin doesn't support TVs.",
+    "carousel_dot": "Show item {{index}} of {{total}}",
+    "zip": {
+      "not_zip": "That file isn't a zip archive.",
+      "damaged": "The zip archive is damaged.",
+      "too_many_files": "The skin has more than {{count}} files.",
+      "too_big": "The skin is too big.",
+      "unsupported_compression": "{{path}} uses a compression method this browser can't read. Zip it again with a standard tool."
+    }
   }
 }

@@ -1,0 +1,10 @@
+{
+  "id": "blank",
+  "name": "Blank",
+  "version": "1.0.0",
+  "author": "Kinora",
+  "description": "Every page with only the bindings and Kinora's layout building blocks. Add your own CSS.",
+  "skinApi": 1,
+  "styles": ["skin.css"],
+  "options": {}
+}

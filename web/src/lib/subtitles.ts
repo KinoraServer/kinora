@@ -53,7 +53,7 @@ export function startSubtitle(p: Pick<PlaybackStart, "subtitles" | "auto_tracks"
 export function describeAutoTracks(p: Pick<PlaybackStart, "auto_tracks"> | null): string {
   const from = p?.auto_tracks?.from;
   if (!from) return i18n.t("player.tracks_none");
-  return i18n.t("player.tracks_from", { scope: from === "series" ? "show" : from });
+  return i18n.t(`player.tracks_from_${from}`);
 }
 
 // ---------------------------------------------------------------------------

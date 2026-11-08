@@ -75,7 +75,7 @@ export function ThemePicker() {
         </div>
         {fixedScheme && selected && (
           <span className="text-xs text-muted-foreground">
-            {t("theme.always_scheme", { name: selected.name, scheme: fixedScheme })}
+            {t(fixedScheme === "light" ? "theme.always_light" : "theme.always_dark", { name: selected.name })}
           </span>
         )}
       </div>

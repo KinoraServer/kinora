@@ -1,9 +1,11 @@
 import { MonitorPlay, Puzzle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
 import { ThemePicker } from "@/components/ThemePicker";
+import { AppSkinsCard } from "@/pages/admin/AppSkins";
+import { useSkin } from "@/skin-engine/SkinProvider";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { BUILTIN_STYLES, type PlayerStyleSetting, THEME_STYLE } from "@/lib/player-styles";
@@ -42,10 +44,11 @@ export function ModulesPage() {
         <div className="space-y-4 p-5 text-sm">
           <ThemePicker />
           <p className="border-t pt-4 text-muted-foreground">
-            {t("admin.modules.theme_doc_a")}{" "}
-            <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code> in your config directory:{" "}
-            {t("admin.modules.theme_doc_b")} <code className="rounded bg-muted px-1">.json</code>
-            {t("admin.modules.theme_doc_c")}
+            <Trans
+              i18nKey="admin.modules.theme_doc"
+              values={{ sample: "themes/example-ocean.json.sample" }}
+              components={{ code: <code className="rounded bg-muted px-1" /> }}
+            />
           </p>
         </div>
       </Card>
@@ -54,6 +57,8 @@ export function ModulesPage() {
       {data?.map((m) => (
         <ModuleCard key={m.id} module={m} onChange={reload} />
       ))}
+
+      {data?.find((m) => m.id === "app-skins")?.enabled && <AppSkinsCard />}
 
       <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} />
 
@@ -91,6 +96,7 @@ function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
   const value = choice ?? savedStyle;
 
   const themeLayout = themes.find((t) => t.id === current)?.player?.layout;
+  const appSkinPlayer = useSkin().bundle?.player?.style;
   const nameOf = (id: string | null | undefined) =>
     BUILTIN_STYLES.find((s) => s.id === id)?.name ?? skins?.find((s) => s.id === id)?.name ?? "Minimal";
   const known =
@@ -121,7 +127,11 @@ function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
               onChange={(e) => setChoice(e.target.value)}
               disabled={setting.loading}
             >
-              <option value={THEME_STYLE}>{t("admin.modules.follow_theme", { name: nameOf(themeLayout) })}</option>
+              <option value={THEME_STYLE}>
+                {appSkinPlayer
+                  ? t("admin.modules.follow_app_skin", { name: nameOf(appSkinPlayer) })
+                  : t("admin.modules.follow_theme", { name: nameOf(themeLayout) })}
+              </option>
               {BUILTIN_STYLES.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}: {t(STYLE_DESC_KEY[s.id] ?? "admin.modules.style_desc_minimal")}

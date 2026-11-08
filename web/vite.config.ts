@@ -42,6 +42,8 @@ export default defineConfig({
   server: {
     // `pnpm dev` talks to a Kinora server running locally.
     proxy: { "/api": "http://localhost:8420" },
+    // The app skin rules and starter skins live with the server (crates/), shared by both.
+    fs: { allow: [".", "../crates/plugin-api/skin-rules.json", "../crates/server/src/modules/app_skin_samples"] },
   },
   test: {
     projects: [

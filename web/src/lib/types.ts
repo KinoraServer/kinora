@@ -15,6 +15,8 @@ export interface SystemInfo {
   version: string;
   server_name: string;
   setup_required: boolean;
+  /** App skin contract versions this server supports. */
+  skin_api?: { current: number; supported: number[] };
 }
 
 export interface ItemCard {
@@ -31,10 +33,23 @@ export interface ItemCard {
   has_poster: boolean;
   has_backdrop: boolean;
   has_thumb: boolean;
+  /** Title art (a transparent logo of the title). */
+  has_logo?: boolean;
   duration_ms: number | null;
   position_ms: number | null;
   played: boolean | null;
   rating: number | null;
+  /** When it was added to the library (Unix ms). */
+  added_at?: number;
+}
+
+/** `GET /api/home/featured`: titles for a home page hero. */
+export interface FeaturedItem extends ItemCard {
+  overview: string | null;
+  tagline: string | null;
+  official_rating: string | null;
+  runtime_minutes: number | null;
+  genres: string[];
 }
 
 export interface HomeRow {

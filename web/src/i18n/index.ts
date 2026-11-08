@@ -6,6 +6,12 @@ import "./types";
 
 export const DEFAULT_LANGUAGE = "en";
 
+// Keep <html lang> in step, so screen readers and the browser's hyphenation
+// and spell checking use the right language.
+i18n.on("languageChanged", (lng) => {
+  if (typeof document !== "undefined") document.documentElement.lang = lng;
+});
+
 // The app's strings live in locales/ (one file per language, same key tree).
 // A language that isn't fully translated falls back to English, key by key.
 void i18n

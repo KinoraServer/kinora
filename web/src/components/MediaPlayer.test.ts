@@ -84,4 +84,11 @@ describe("resolvePlayerStyle", () => {
     expect(resolvePlayerStyle("neon", null, [])).toBe("minimal");
     expect(resolvePlayerStyle(null, "neon", [])).toBe("minimal");
   });
+
+  it("uses the app skin's player when the server follows the theme", () => {
+    expect(resolvePlayerStyle("theme", "floating", ["marquee-player"], "marquee-player")).toBe("marquee-player");
+    expect(resolvePlayerStyle(null, null, [], "cinematic")).toBe("cinematic");
+    expect(resolvePlayerStyle("pro", "floating", ["marquee-player"], "marquee-player")).toBe("pro");
+    expect(resolvePlayerStyle("theme", null, [], "gone-player")).toBe("minimal");
+  });
 });

@@ -1,5 +1,5 @@
 // The signed-in person's own settings: a list of sections (like a TV app's
-// settings menu), each opening its own page. Profile works today; Display,
+// settings menu), each opening its own page. Profile and Display work today;
 // Audio and Subtitles are placeholders for settings that come later.
 
 import { AudioLines, Captions, ChevronLeft, ChevronRight, MonitorCog, User, type LucideIcon } from "lucide-react";
@@ -8,12 +8,13 @@ import { useTranslation } from "react-i18next";
 import { Link, Navigate, useParams } from "react-router";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, ErrorNote } from "@/components/ui/card";
+import { Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { shrinkToAvatar } from "@/lib/avatar-image";
-import { useSession } from "@/lib/session";
+import { useApi, useSession } from "@/lib/session";
 import type { User as UserType } from "@/lib/types";
+import { useSkin } from "@/skin-engine/SkinProvider";
 
 type SectionLabelKey =
   | "settings.sections.profile.label"
@@ -21,7 +22,8 @@ type SectionLabelKey =
   | "settings.sections.audio.label"
   | "settings.sections.subtitles.label";
 
-type SectionDescriptionKey = "settings.sections.profile.description" | "settings.coming_soon";
+type SectionDescriptionKey =
+  "settings.sections.profile.description" | "settings.sections.display.description" | "settings.coming_soon";
 
 interface Section {
   id: string;
@@ -42,8 +44,9 @@ export const SECTIONS: Section[] = [
   {
     id: "display",
     labelKey: "settings.sections.display.label",
-    descriptionKey: "settings.coming_soon",
+    descriptionKey: "settings.sections.display.description",
     icon: MonitorCog,
+    page: () => <DisplaySettings />,
   },
   { id: "audio", labelKey: "settings.sections.audio.label", descriptionKey: "settings.coming_soon", icon: AudioLines },
   {
@@ -117,6 +120,83 @@ function ComingSoon({ label }: { label: string }) {
       <p className="font-medium">{t("settings.coming_soon_title", { label })}</p>
       <p className="mt-1 text-sm text-muted-foreground">{t("settings.coming_soon_body")}</p>
     </Card>
+  );
+}
+
+interface MySkin {
+  allowed: boolean;
+  server: string;
+  mine: string | null;
+  choices: { id: string; name: string; description: string | null; has_preview: boolean }[];
+}
+
+/** Display: which app skin to use (when the server allows picking) and safe mode for this browser. */
+export function DisplaySettings() {
+  const { t } = useTranslation();
+  const { data, setData, error } = useApi<MySkin>("api/me/app-skin");
+  const skin = useSkin();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, flash] = useSavedFlash();
+  const serverName = data?.choices.find((c) => c.id === data.server)?.name ?? t("settings.display.the_standard_look");
+
+  const pick = async (value: string | null) => {
+    setSaveError(null);
+    try {
+      await api.put("api/me/app-skin", { skin: value });
+      if (data) setData({ ...data, mine: value });
+      skin.reload();
+      flash();
+    } catch (e) {
+      setSaveError((e as Error).message);
+    }
+  };
+
+  const option = (value: string | null, label: string, description?: string | null) => (
+    <label
+      key={value ?? "follow"}
+      className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-accent"
+    >
+      <input
+        type="radio"
+        name="app-skin"
+        className="mt-1 cursor-pointer accent-[var(--kn-primary)]"
+        checked={(data?.mine ?? null) === value}
+        onChange={() => pick(value)}
+      />
+      <span>
+        <span className="block text-sm font-medium">{label}</span>
+        {description && <span className="block text-xs text-muted-foreground">{description}</span>}
+      </span>
+    </label>
+  );
+
+  return (
+    <div className="space-y-6">
+      {data?.allowed && (
+        <Card>
+          <CardHeader title={t("settings.display.app_skin_title")} description={t("settings.display.app_skin_help")} />
+          <div className="space-y-1 p-3" role="radiogroup" aria-label={t("settings.display.app_skin_title")}>
+            {option(null, t("settings.display.same_as_server", { name: serverName }))}
+            {option("none", t("skins.standard_look"))}
+            {data.choices.map((c) => option(c.id, c.name, c.description))}
+          </div>
+          <div className="px-5 pb-4">
+            <ErrorNote message={saveError} />
+            {saved && <p className="text-sm text-muted-foreground">{t("common.saved")}</p>}
+          </div>
+        </Card>
+      )}
+      <ErrorNote message={error} />
+      <Card>
+        <div className="flex items-center justify-between gap-4 p-5">
+          <div>
+            <p className="font-medium">{t("skins.safe_mode")}</p>
+            <p className="text-sm text-muted-foreground">{t("settings.display.safe_mode_help")}</p>
+          </div>
+          <Switch label={t("skins.safe_mode")} checked={skin.safeMode} onChange={skin.setSafeMode} />
+        </div>
+      </Card>
+    </div>
   );
 }
 

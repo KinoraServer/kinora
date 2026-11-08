@@ -74,6 +74,7 @@ import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { infoToText, type InfoIcon, type InfoSection, type PlayerInfo } from "@/lib/playback-stats";
 import { type PlayerStyleSetting, resolvePlayerStyle } from "@/lib/player-styles";
+import { useSkin } from "@/skin-engine/SkinProvider";
 import type { PlayerSkin } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -404,10 +405,12 @@ function usePlayerStyle() {
   const skinList = useApi<PlayerSkin[]>("api/player-skins");
   const skins = useMemo(() => skinList.data ?? [], [skinList.data]);
   const themeLayout = themes.find((t) => t.id === current)?.player?.layout;
+  const appSkin = useSkin().skin;
   const style = resolvePlayerStyle(
     setting.data?.style,
     themeLayout,
     skins.map((s) => s.id),
+    appSkin?.bundle.player?.style,
   );
   return { style, skin: skins.find((k) => k.id === style), ready: !setting.loading && !skinList.loading };
 }

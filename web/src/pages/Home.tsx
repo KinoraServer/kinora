@@ -1,4 +1,4 @@
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { MediaRow } from "@/components/ItemTile";
 import { Empty, ErrorNote, Spinner } from "@/components/ui/card";
@@ -16,13 +16,10 @@ export function HomePage() {
     return (
       <Empty title={t("home.empty_title")}>
         {isAdmin ? (
-          <>
-            {t("home.empty_admin_a")}{" "}
-            <Link to="/admin/libraries" className="cursor-pointer text-primary underline">
-              {t("home.empty_admin_link")}
-            </Link>{" "}
-            {t("home.empty_admin_b")}
-          </>
+          <Trans
+            i18nKey="home.empty_admin"
+            components={{ link: <Link to="/admin/libraries" className="cursor-pointer text-primary underline" /> }}
+          />
         ) : (
           t("home.empty_viewer")
         )}
