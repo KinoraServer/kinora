@@ -7,9 +7,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use kinora_core::ffmpeg::Tonemapper;
-use kinora_core::hls::{parse_segment_name, vod_playlist, INIT_NAME, SEGMENT_SECONDS};
+use kinora_core::hls::{parse_segment_name, INIT_NAME};
 use kinora_core::media::{HdrFormat, MediaInfo};
-use kinora_core::playback::{decide, ClientCaps, Limits, Method, PlaybackPlan};
+use kinora_core::playback::{decide, ClientCaps, Limits, Method, PlaybackPlan, SegmentFormat};
 use kinora_core::roles::Role;
 use kinora_plugin_api::ServerEvent;
 use serde::{Deserialize, Serialize};
@@ -153,6 +153,21 @@ async fn start(
         (format!("api/stream/{file_id}"), None)
     } else {
         let v = file.info.video.as_ref();
+        // Copied video can only be cut at keyframes: read their times from
+        // the file's index so the playlist matches what ffmpeg writes.
+        let keyframes_ms = if plan.segments == SegmentFormat::Fmp4 && file.info.container == "matroska" {
+            let path = file.path.clone();
+            tokio::task::spawn_blocking(move || {
+                std::fs::File::open(&path).ok().and_then(|mut f| kinora_core::mkv::video_keyframes_ms(&mut f))
+            })
+            .await
+            .unwrap_or(None)
+        } else {
+            None
+        };
+        if plan.segments == SegmentFormat::Fmp4 && keyframes_ms.is_none() {
+            tracing::info!(path = %file.path, "no keyframe index; copied video uses fixed-length segments");
+        }
         let id = state
             .transcodes
             .create(SessionInput {
@@ -165,6 +180,7 @@ async fn start(
                 video_index: v.map(|v| v.index),
                 frame_rate: v.and_then(|v| v.frame_rate),
                 source_is_dolby_vision: v.map(|v| v.hdr == HdrFormat::DolbyVision).unwrap_or(false),
+                keyframes_ms,
                 plan: plan.clone(),
                 hw: hw.clone(),
             })
@@ -207,11 +223,8 @@ async fn check_session(state: &AppState, user: &AuthUser, session: &str) -> AppR
 
 async fn playlist(State(state): State<AppState>, user: AuthUser, Path(session): Path<String>) -> AppResult<Response> {
     check_session(&state, &user, &session).await?;
-    let (duration, segments) = state.transcodes.playlist_info(&session).await.ok_or(AppError::NotFound)?;
-    Ok((
-        [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl"), (header::CACHE_CONTROL, "no-cache")],
-        vod_playlist(duration, SEGMENT_SECONDS, segments),
-    )
+    let playlist = state.transcodes.playlist(&session).await.ok_or(AppError::NotFound)?;
+    Ok(([(header::CONTENT_TYPE, "application/vnd.apple.mpegurl"), (header::CACHE_CONTROL, "no-cache")], playlist)
         .into_response())
 }
 

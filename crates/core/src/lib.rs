@@ -5,8 +5,10 @@
 //! plain data, check the plain data it returns.
 
 pub mod ffmpeg;
+pub mod fmp4;
 pub mod hls;
 pub mod media;
+pub mod mkv;
 pub mod naming;
 pub mod playback;
 pub mod roles;

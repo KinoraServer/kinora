@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::hls::run_init_name;
+use crate::hls::{piece_pattern, run_init_name};
 use crate::playback::{AudioAction, PlaybackPlan, SegmentFormat, VideoAction};
 
 /// Which hardware video API to use. Picked at startup by probing the machine.
@@ -166,9 +166,19 @@ pub struct HlsJob<'a> {
     pub frame_rate: Option<f64>,
     pub segment_seconds: u32,
     pub start_segment: u32,
+    /// Where the start segment begins. With `keyframe_pieces` this is a
+    /// keyframe time from the file's index, not `start_segment * segment_seconds`.
+    pub start_ms: u64,
+    /// Copied video on a keyframe timeline: cut at every keyframe into
+    /// `gop_<run>_<n>.m4s` pieces, which the server groups into the
+    /// playlist's segments (see `kinora_core::hls::complete_segments`).
+    pub keyframe_pieces: bool,
     /// Directory ffmpeg writes segments into.
     pub output_dir: &'a str,
 }
+
+/// How much earlier a restarted keyframe run starts its audio.
+const AUDIO_PREROLL_MS: u64 = 1000;
 
 pub fn hls_args(job: &HlsJob) -> Vec<String> {
     let mut a: Vec<String> = Vec::new();
@@ -222,21 +232,41 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
         }
     }
 
-    let start_seconds = job.start_segment * job.segment_seconds;
-    if start_seconds > 0 {
+    let start_seconds = job.start_ms / 1000;
+    if job.keyframe_pieces && job.start_ms > 0 {
+        // Just past the keyframe: ffmpeg starts copying at the keyframe at
+        // or before -ss, and rounding must never land on the one before.
+        let at = job.start_ms + 1;
+        a.extend(["-ss".into(), format!("{}.{:03}", at / 1000, at % 1000)]);
+    } else if job.start_ms > 0 {
         a.extend(["-ss".into(), start_seconds.to_string()]);
     }
     // Keep the source timestamps so every segment lines up with the playlist,
     // no matter where ffmpeg was (re)started.
     a.extend(["-copyts", "-start_at_zero", "-avoid_negative_ts", "disabled"].map(String::from));
     a.extend(["-i".into(), job.input.to_string()]);
+    // A restarted run's audio starts a little early, from a second copy of
+    // the input. The run before it was stopped mid-way, so the audio just
+    // before its last cut (muxed after that keyframe) never got written;
+    // the overlap fills that gap and the browser drops the duplicate.
+    let audio_input = match (job.keyframe_pieces, job.plan.audio_index) {
+        (true, Some(_)) if job.start_ms > 0 => {
+            let at = job.start_ms.saturating_sub(AUDIO_PREROLL_MS);
+            if at > 0 {
+                a.extend(["-ss".into(), format!("{}.{:03}", at / 1000, at % 1000)]);
+            }
+            a.extend(["-i".into(), job.input.to_string()]);
+            1
+        }
+        _ => 0,
+    };
 
     // --- stream selection -----------------------------------------------------
     if let Some(v) = job.video_index {
         a.extend(["-map".into(), format!("0:{v}")]);
     }
     if let Some(i) = job.plan.audio_index {
-        a.extend(["-map".into(), format!("0:{i}")]);
+        a.extend(["-map".into(), format!("{audio_input}:{i}")]);
     }
     a.extend(["-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1"].map(String::from));
 
@@ -279,7 +309,9 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
 
     // --- HLS output -----------------------------------------------------------
     let dir = job.output_dir.trim_end_matches('/');
-    a.extend(["-f".into(), "hls".into(), "-hls_time".into(), job.segment_seconds.to_string()]);
+    // Pieces: a tiny target makes the HLS muxer cut at every keyframe.
+    let hls_time = if job.keyframe_pieces { "0.1".to_string() } else { job.segment_seconds.to_string() };
+    a.extend(["-f".into(), "hls".into(), "-hls_time".into(), hls_time]);
     match job.plan.segments {
         SegmentFormat::MpegTs => a.extend(["-hls_segment_type", "mpegts"].map(String::from)),
         SegmentFormat::Fmp4 => a.extend([
@@ -294,15 +326,23 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
             "movflags=+frag_discont".into(),
         ]),
     }
+    let (start_number, pattern, list_size) = if job.keyframe_pieces {
+        // ffmpeg's own playlist isn't used; keeping it short saves rewriting
+        // thousands of lines after every piece.
+        (0, piece_pattern(job.start_segment), "1")
+    } else {
+        let ext = if job.plan.segments == SegmentFormat::Fmp4 { "m4s" } else { "ts" };
+        (job.start_segment, format!("seg_%d.{ext}"), "0")
+    };
     a.extend([
         "-hls_list_size".into(),
-        "0".into(),
+        list_size.into(),
         "-hls_flags".into(),
         "temp_file".into(),
         "-start_number".into(),
-        job.start_segment.to_string(),
+        start_number.to_string(),
         "-hls_segment_filename".into(),
-        format!("{dir}/seg_%d.{}", if job.plan.segments == SegmentFormat::Fmp4 { "m4s" } else { "ts" }),
+        format!("{dir}/{pattern}"),
         format!("{dir}/ffmpeg.m3u8"),
     ]);
     a
@@ -465,6 +505,8 @@ mod tests {
             frame_rate: Some(23.976),
             segment_seconds: 6,
             start_segment: start,
+            start_ms: u64::from(start) * 6000,
+            keyframe_pieces: false,
             output_dir: "/tmp/t/abc",
         })
         .join(" ")
@@ -503,6 +545,37 @@ mod tests {
             reasons: vec![],
         };
         insta::assert_snapshot!(run(&plan, HwAccel::Nvenc, Tonemapper::Zscale, true, 100));
+    }
+
+    #[test]
+    fn copied_video_on_a_keyframe_timeline_is_cut_into_pieces() {
+        let plan = PlaybackPlan {
+            method: Method::Transcode,
+            segments: SegmentFormat::Fmp4,
+            video: Some(VideoAction::Copy),
+            audio_index: Some(1),
+            audio: Some(AudioAction::Encode { codec: "aac".into(), channels: 6, bitrate: 384_000 }),
+            reasons: vec![],
+        };
+        let hw = HwProfile::default();
+        let args = hls_args(&HlsJob {
+            input: "/m/a.mkv",
+            plan: &plan,
+            hw: &hw,
+            video_index: Some(0),
+            source_is_dolby_vision: false,
+            frame_rate: Some(23.976),
+            segment_seconds: 6,
+            start_segment: 114,
+            start_ms: 684_084,
+            keyframe_pieces: true,
+            output_dir: "/tmp/s",
+        })
+        .join(" ");
+        insta::assert_snapshot!(args);
+        assert!(args.contains("-ss 684.085 "), "{args}");
+        assert!(args.contains("-hls_time 0.1 "), "{args}");
+        assert!(args.contains("-start_number 0 -hls_segment_filename /tmp/s/gop_114_%d.m4s"), "{args}");
     }
 
     #[test]
@@ -575,6 +648,8 @@ mod tests {
             frame_rate: None,
             segment_seconds: 6,
             start_segment: 0,
+            start_ms: 0,
+            keyframe_pieces: false,
             output_dir: "/tmp/x",
         })
         .join(" ");

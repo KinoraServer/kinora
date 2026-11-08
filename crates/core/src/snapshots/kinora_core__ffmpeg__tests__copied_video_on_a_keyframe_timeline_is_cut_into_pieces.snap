@@ -1,0 +1,5 @@
+---
+source: crates/core/src/ffmpeg.rs
+expression: args
+---
+-hide_banner -loglevel error -nostdin -y -ss 684.085 -copyts -start_at_zero -avoid_negative_ts disabled -i /m/a.mkv -ss 683.084 -i /m/a.mkv -map 0:0 -map 1:1 -sn -dn -map_metadata -1 -map_chapters -1 -c:v copy -tag:v hvc1 -c:a aac -ac 6 -b:a 384000 -f hls -hls_time 0.1 -hls_segment_type fmp4 -hls_fmp4_init_filename init_114.mp4 -hls_segment_options movflags=+frag_discont -hls_list_size 1 -hls_flags temp_file -start_number 0 -hls_segment_filename /tmp/s/gop_114_%d.m4s /tmp/s/ffmpeg.m3u8
