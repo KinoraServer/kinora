@@ -1,5 +1,6 @@
 import { FolderPlus, RefreshCw, Trash2, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { FolderPicker } from "@/components/FolderPicker";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, Empty, ErrorNote } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { useApi } from "@/lib/session";
 import type { Library } from "@/lib/types";
 
 export function LibrariesPage() {
+  const { t } = useTranslation();
   const { data, reload, error } = useApi<Library[]>("api/libraries");
   const [adding, setAdding] = useState(false);
   const anyRunning = data?.some((l) => l.scan?.running);
@@ -27,7 +29,7 @@ export function LibrariesPage() {
     reload();
   };
   const remove = async (lib: Library) => {
-    if (!confirm(`Remove "${lib.name}"? Your files are not touched, only Kinora's records.`)) return;
+    if (!confirm(t("admin.libraries.remove_confirm", { name: lib.name }))) return;
     await api.del(`api/libraries/${lib.id}`);
     reload();
   };
@@ -35,11 +37,11 @@ export function LibrariesPage() {
   return (
     <Card>
       <CardHeader
-        title="Libraries"
-        description="Folders Kinora watches. Inside Docker, these are paths in the container (for example /media/movies)."
+        title={t("admin.libraries.title")}
+        description={t("admin.libraries.help")}
         action={
           <Button onClick={() => setAdding(true)}>
-            <FolderPlus className="h-4 w-4" /> Add library
+            <FolderPlus className="h-4 w-4" /> {t("admin.libraries.add")}
           </Button>
         }
       />
@@ -47,21 +49,28 @@ export function LibrariesPage() {
       <div className="divide-y">
         {data?.length === 0 && (
           <div className="p-5">
-            <Empty title="No libraries yet">Add one to start scanning your movies and shows.</Empty>
+            <Empty title={t("admin.libraries.empty")}>{t("admin.libraries.empty_body")}</Empty>
           </div>
         )}
         {data?.map((lib) => (
           <div key={lib.id} className="flex flex-wrap items-center justify-between gap-4 p-5">
             <div className="min-w-0 space-y-1">
               <p className="flex items-center gap-2 font-medium">
-                {lib.name} <Badge>{lib.kind === "tv" ? "TV shows" : "Movies"}</Badge>
+                {lib.name}{" "}
+                <Badge>{lib.kind === "tv" ? t("admin.libraries.kind_tv") : t("admin.libraries.kind_movies")}</Badge>
               </p>
               <p className="truncate font-mono text-xs text-muted-foreground">{lib.paths.join(", ")}</p>
               <p className="text-sm text-muted-foreground">
                 {lib.scan?.running
-                  ? `Scanning: ${lib.scan.phase} ${lib.scan.total ? `(${lib.scan.processed}/${lib.scan.total})` : ""}`
-                  : `${lib.item_count} titles · last scan ${formatDate(lib.last_scan_at)}`}
-                {lib.scan && !lib.scan.running && lib.scan.errors > 0 && ` · ${lib.scan.errors} files couldn't be read`}
+                  ? t("admin.libraries.scanning", { phase: lib.scan.phase }) +
+                    (lib.scan.total
+                      ? ` ${t("admin.libraries.scan_progress", { processed: lib.scan.processed, total: lib.scan.total })}`
+                      : "")
+                  : t("admin.libraries.stats", { count: lib.item_count, lastScan: formatDate(lib.last_scan_at) })}
+                {lib.scan &&
+                  !lib.scan.running &&
+                  lib.scan.errors > 0 &&
+                  t("admin.libraries.scan_errors", { count: lib.scan.errors })}
               </p>
               {lib.scan?.last_error && !lib.scan.running && (
                 <p className="text-xs text-destructive">{lib.scan.last_error}</p>
@@ -69,9 +78,15 @@ export function LibrariesPage() {
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={() => scan(lib.id)} disabled={lib.scan?.running}>
-                <RefreshCw className={`h-4 w-4 ${lib.scan?.running ? "animate-spin" : ""}`} /> Scan
+                <RefreshCw className={`h-4 w-4 ${lib.scan?.running ? "animate-spin" : ""}`} />{" "}
+                {t("admin.libraries.scan")}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => remove(lib)} aria-label={`Remove ${lib.name}`}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(lib)}
+                aria-label={t("admin.libraries.remove", { name: lib.name })}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
@@ -91,6 +106,7 @@ export function LibrariesPage() {
 }
 
 function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: () => void }) {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"movies" | "tv">("movies");
   const [paths, setPaths] = useState<string[]>([]);
@@ -114,20 +130,25 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Add library">
+    <Dialog open={open} onClose={onClose} title={t("admin.libraries.add")}>
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Movies" required />
+          <Field label={t("common.name")}>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("admin.libraries.name_placeholder")}
+              required
+            />
           </Field>
-          <Field label="Type">
+          <Field label={t("common.type")}>
             <Select value={kind} onChange={(e) => setKind(e.target.value as "movies" | "tv")}>
-              <option value="movies">Movies</option>
-              <option value="tv">TV shows</option>
+              <option value="movies">{t("admin.libraries.kind_movies")}</option>
+              <option value="tv">{t("admin.libraries.kind_tv")}</option>
             </Select>
           </Field>
         </div>
-        <Field label="Folders" help="Pick one or more folders. Sub-folders are included.">
+        <Field label={t("admin.libraries.folders")} help={t("admin.libraries.folders_help")}>
           <div className="mb-2 space-y-1">
             {paths.map((p) => (
               <div
@@ -139,7 +160,7 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
                   type="button"
                   onClick={() => setPaths(paths.filter((x) => x !== p))}
                   className="cursor-pointer"
-                  aria-label={`Remove ${p}`}
+                  aria-label={t("common.remove", { name: p })}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -151,10 +172,10 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
         <ErrorNote message={error} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" disabled={busy || paths.length === 0}>
-            Add and scan
+            {t("admin.libraries.add_and_scan")}
           </Button>
         </div>
       </form>

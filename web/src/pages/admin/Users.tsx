@@ -1,5 +1,6 @@
 import { Trash2, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -17,20 +18,24 @@ interface UserRow {
   last_login_at: number | null;
 }
 
-const ROLE_HELP: Record<Role, string> = {
-  owner: "Set up the server",
-  admin: "Manages libraries, users and settings",
-  editor: "Can fix metadata",
-  viewer: "Can watch",
+const ROLE_HELP: Record<
+  Role,
+  "admin.users.role_owner" | "admin.users.role_admin" | "admin.users.role_editor" | "admin.users.role_viewer"
+> = {
+  owner: "admin.users.role_owner",
+  admin: "admin.users.role_admin",
+  editor: "admin.users.role_editor",
+  viewer: "admin.users.role_viewer",
 };
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const { user } = useSession();
   const { data, reload, error } = useApi<UserRow[]>("api/users");
   const [open, setOpen] = useState(false);
 
   const remove = async (u: UserRow) => {
-    if (!confirm(`Delete ${u.username}? Their watch history is removed too.`)) return;
+    if (!confirm(t("admin.users.delete_confirm", { username: u.username }))) return;
     await api.del(`api/users/${u.id}`).catch((e: Error) => alert(e.message));
     reload();
   };
@@ -38,11 +43,11 @@ export function UsersPage() {
   return (
     <Card>
       <CardHeader
-        title="Users"
-        description="Everyone who can sign in to this server."
+        title={t("admin.users.title")}
+        description={t("admin.users.help")}
         action={
           <Button onClick={() => setOpen(true)}>
-            <UserPlus className="h-4 w-4" /> Add user
+            <UserPlus className="h-4 w-4" /> {t("admin.users.add")}
           </Button>
         }
       />
@@ -52,12 +57,19 @@ export function UsersPage() {
           <div key={u.id} className="flex items-center justify-between gap-4 p-5">
             <div>
               <p className="flex items-center gap-2 font-medium">
-                {u.username} <Badge title={ROLE_HELP[u.role]}>{u.role}</Badge>
+                {u.username} <Badge title={t(ROLE_HELP[u.role])}>{u.role}</Badge>
               </p>
-              <p className="text-sm text-muted-foreground">Last sign-in: {formatDate(u.last_login_at)}</p>
+              <p className="text-sm text-muted-foreground">
+                {t("admin.users.last_sign_in", { when: formatDate(u.last_login_at) })}
+              </p>
             </div>
             {u.id !== user?.id && u.role !== "owner" && (
-              <Button variant="ghost" size="sm" onClick={() => remove(u)} aria-label={`Delete ${u.username}`}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(u)}
+                aria-label={t("admin.users.delete", { username: u.username })}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             )}
@@ -78,6 +90,7 @@ export function UsersPage() {
 }
 
 function AddUserDialog(props: { open: boolean; canMakeAdmin: boolean; onClose: () => void; onAdded: () => void }) {
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("viewer");
@@ -97,12 +110,12 @@ function AddUserDialog(props: { open: boolean; canMakeAdmin: boolean; onClose: (
   };
 
   return (
-    <Dialog open={props.open} onClose={props.onClose} title="Add user">
+    <Dialog open={props.open} onClose={props.onClose} title={t("admin.users.add")}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Username">
+        <Field label={t("auth.username")}>
           <Input value={username} onChange={(e) => setUsername(e.target.value)} required />
         </Field>
-        <Field label="Password" help="At least 8 characters. They can change it later.">
+        <Field label={t("auth.password")} help={t("admin.users.password_help")}>
           <Input
             type="password"
             value={password}
@@ -111,19 +124,19 @@ function AddUserDialog(props: { open: boolean; canMakeAdmin: boolean; onClose: (
             required
           />
         </Field>
-        <Field label="Role" help={ROLE_HELP[role]}>
+        <Field label={t("admin.users.role")} help={t(ROLE_HELP[role])}>
           <Select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
-            {props.canMakeAdmin && <option value="admin">Admin</option>}
+            <option value="viewer">{t("admin.users.option_viewer")}</option>
+            <option value="editor">{t("admin.users.option_editor")}</option>
+            {props.canMakeAdmin && <option value="admin">{t("admin.users.option_admin")}</option>}
           </Select>
         </Field>
         <ErrorNote message={error} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={props.onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
-          <Button type="submit">Add user</Button>
+          <Button type="submit">{t("admin.users.add")}</Button>
         </div>
       </form>
     </Dialog>

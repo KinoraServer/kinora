@@ -1,5 +1,6 @@
 import { ChevronUp, Folder } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useApi } from "@/lib/session";
 import { Button } from "./ui/button";
 import { Spinner } from "./ui/card";
@@ -13,6 +14,7 @@ interface FolderList {
 
 /** Browse folders on the server (inside Docker: the container's view, usually /media). */
 export function FolderPicker({ onPick }: { onPick: (path: string) => void }) {
+  const { t } = useTranslation();
   const [path, setPath] = useState("");
   const { data, error, loading } = useApi<FolderList>(`api/fs/folders?path=${encodeURIComponent(path)}`);
   const join = (base: string, name: string) =>
@@ -21,9 +23,9 @@ export function FolderPicker({ onPick }: { onPick: (path: string) => void }) {
   return (
     <div className="space-y-2">
       <div className="flex gap-2">
-        <Input value={data?.path ?? path} onChange={(e) => setPath(e.target.value)} aria-label="Folder path" />
+        <Input value={data?.path ?? path} onChange={(e) => setPath(e.target.value)} aria-label={t("folder.path")} />
         <Button type="button" onClick={() => data && onPick(data.path)} disabled={!data}>
-          Use this folder
+          {t("folder.use")}
         </Button>
       </div>
       <div className="h-56 overflow-auto rounded-md border bg-background">
@@ -48,7 +50,7 @@ export function FolderPicker({ onPick }: { onPick: (path: string) => void }) {
             <Folder className="h-4 w-4 text-primary" /> {f}
           </button>
         ))}
-        {data && data.folders.length === 0 && <p className="p-3 text-sm text-muted-foreground">No sub-folders.</p>}
+        {data && data.folders.length === 0 && <p className="p-3 text-sm text-muted-foreground">{t("folder.empty")}</p>}
       </div>
     </div>
   );

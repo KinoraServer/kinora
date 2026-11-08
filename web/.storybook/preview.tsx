@@ -4,6 +4,7 @@ import { clearTheme, ThemeProvider, useTheme } from "../src/lib/theme";
 import { builtinThemes } from "../src/stories/fixtures";
 import { defaultApi, installMockApi, type MockApi } from "../src/stories/mock-api";
 import { VIEWPORT_OPTIONS } from "./devices";
+import "../src/i18n";
 import "../src/index.css";
 
 /** Keeps the app's theme in step with the "Theme" toolbar menu. */

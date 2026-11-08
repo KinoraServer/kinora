@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { MediaRow } from "@/components/ItemTile";
 import { Empty, ErrorNote, Spinner } from "@/components/ui/card";
@@ -5,6 +6,7 @@ import { useApi, useSession } from "@/lib/session";
 import type { HomeRow } from "@/lib/types";
 
 export function HomePage() {
+  const { t } = useTranslation();
   const { data, error, loading } = useApi<HomeRow[]>("api/home");
   const { isAdmin } = useSession();
 
@@ -12,17 +14,17 @@ export function HomePage() {
   if (error) return <ErrorNote message={error} />;
   if (!data?.length) {
     return (
-      <Empty title="Nothing here yet">
+      <Empty title={t("home.empty_title")}>
         {isAdmin ? (
           <>
-            Add a library in{" "}
+            {t("home.empty_admin_a")}{" "}
             <Link to="/admin/libraries" className="cursor-pointer text-primary underline">
-              Admin → Libraries
+              {t("home.empty_admin_link")}
             </Link>{" "}
-            to start scanning your media.
+            {t("home.empty_admin_b")}
           </>
         ) : (
-          "Ask the server owner to add a library."
+          t("home.empty_viewer")
         )}
       </Empty>
     );

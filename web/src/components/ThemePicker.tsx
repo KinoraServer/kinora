@@ -1,13 +1,14 @@
 import { Check, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { groupThemes, useTheme, type ThemeFamily, type ThemeMode } from "@/lib/theme";
 import type { Theme } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const MODES: { id: ThemeMode; label: string; icon: LucideIcon }[] = [
-  { id: "light", label: "Light", icon: Sun },
-  { id: "dark", label: "Dark", icon: Moon },
-  { id: "system", label: "System", icon: Monitor },
+const MODES: { id: ThemeMode; labelKey: "theme.light" | "theme.dark" | "theme.system"; icon: LucideIcon }[] = [
+  { id: "light", labelKey: "theme.light", icon: Sun },
+  { id: "dark", labelKey: "theme.dark", icon: Moon },
+  { id: "system", labelKey: "theme.system", icon: Monitor },
 ];
 
 /**
@@ -16,6 +17,7 @@ const MODES: { id: ThemeMode; label: string; icon: LucideIcon }[] = [
  * Changes apply instantly and are saved in this browser.
  */
 export function ThemePicker() {
+  const { t } = useTranslation();
   const { themes, current, chosen, mode, setTheme, setMode } = useTheme();
   const groups = groupThemes(themes);
   const name = useId();
@@ -38,7 +40,7 @@ export function ThemePicker() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="text-sm font-medium" id={`${name}-mode`}>
-          Mode
+          {t("theme.mode")}
         </span>
         <div
           role="radiogroup"
@@ -67,29 +69,29 @@ export function ThemePicker() {
               />
               <span className="pointer-events-none absolute inset-0 rounded-[inherit] peer-focus-visible:ring-2 peer-focus-visible:ring-ring" />
               <m.icon className="h-3.5 w-3.5" aria-hidden />
-              {m.label}
+              {t(m.labelKey)}
             </label>
           ))}
         </div>
         {fixedScheme && selected && (
           <span className="text-xs text-muted-foreground">
-            {selected.name} always uses {fixedScheme} mode.
+            {t("theme.always_scheme", { name: selected.name, scheme: fixedScheme })}
           </span>
         )}
       </div>
 
-      <div className="space-y-3" role="radiogroup" aria-label="Theme">
-        <Group title="Light & dark" hint="Follow the mode above">
+      <div className="space-y-3" role="radiogroup" aria-label={t("theme.aria")}>
+        <Group title={t("theme.group_paired")} hint={t("theme.follow_mode")}>
           {groups.paired.map((f) => (
             <ThemeCard key={f.id} family={f} name={name} checked={f === selected} onPick={pick} />
           ))}
         </Group>
-        <Group title="Dark">
+        <Group title={t("theme.group_dark")}>
           {groups.dark.map((f) => (
             <ThemeCard key={f.id} family={f} name={name} checked={f === selected} onPick={pick} />
           ))}
         </Group>
-        <Group title="Light">
+        <Group title={t("theme.group_light")}>
           {groups.light.map((f) => (
             <ThemeCard key={f.id} family={f} name={name} checked={f === selected} onPick={pick} />
           ))}
@@ -97,7 +99,7 @@ export function ThemePicker() {
       </div>
       {/* Kept for the case where the chosen id isn't installed any more. */}
       {!selected && themes.length > 0 && (
-        <p className="text-xs text-muted-foreground">Theme "{chosen}" isn't installed; using the default.</p>
+        <p className="text-xs text-muted-foreground">{t("theme.not_installed", { name: chosen })}</p>
       )}
     </div>
   );

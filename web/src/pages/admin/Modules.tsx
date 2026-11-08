@@ -1,5 +1,6 @@
 import { MonitorPlay, Puzzle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
 import { ThemePicker } from "@/components/ThemePicker";
@@ -32,21 +33,19 @@ interface ModuleView {
 }
 
 export function ModulesPage() {
+  const { t } = useTranslation();
   const { data, reload, error } = useApi<ModuleView[]>("api/modules");
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader
-          title="Theme"
-          description="Pick a mode and a theme for this browser. The default for everyone else is under Settings."
-        />
+        <CardHeader title={t("admin.modules.theme")} description={t("admin.modules.theme_help")} />
         <div className="space-y-4 p-5 text-sm">
           <ThemePicker />
           <p className="border-t pt-4 text-muted-foreground">
-            Themes are small JSON files of colours and sizes. To add one, start from{" "}
-            <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code> in your config directory:
-            copy it to a new name ending in <code className="rounded bg-muted px-1">.json</code>, change the id, name
-            and colours. See docs/themes.md for every token.
+            {t("admin.modules.theme_doc_a")}{" "}
+            <code className="rounded bg-muted px-1">themes/example-ocean.json.sample</code> in your config directory:{" "}
+            {t("admin.modules.theme_doc_b")} <code className="rounded bg-muted px-1">.json</code>
+            {t("admin.modules.theme_doc_c")}
           </p>
         </div>
       </Card>
@@ -58,15 +57,27 @@ export function ModulesPage() {
 
       <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} />
 
-      <p className="text-xs text-muted-foreground">
-        This product uses the TMDB API but is not endorsed or certified by TMDB.
-      </p>
+      <p className="text-xs text-muted-foreground">{t("admin.modules.tmdb")}</p>
     </div>
   );
 }
 
 /** The one player layout every client uses, saved on the server. */
+const STYLE_DESC_KEY: Record<
+  string,
+  | "admin.modules.style_desc_minimal"
+  | "admin.modules.style_desc_cinematic"
+  | "admin.modules.style_desc_floating"
+  | "admin.modules.style_desc_pro"
+> = {
+  minimal: "admin.modules.style_desc_minimal",
+  cinematic: "admin.modules.style_desc_cinematic",
+  floating: "admin.modules.style_desc_floating",
+  pro: "admin.modules.style_desc_pro",
+};
+
 function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
+  const { t } = useTranslation();
   const setting = useApi<PlayerStyleSetting>("api/player/style");
   // Refetch when the skins module is switched on or off so the list matches.
   const { data: skins } = useApi<PlayerSkin[]>("api/player-skins", [skinsEnabled]);
@@ -99,45 +110,38 @@ function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
 
   return (
     <Card>
-      <CardHeader
-        title="Player style"
-        description="The video player every app and browser on this server uses. Pick a built-in style or an installed custom skin."
-      />
+      <CardHeader title={t("admin.modules.player_title")} description={t("admin.modules.player_help")} />
       <div className="space-y-4 p-5">
         <div className="flex gap-3">
           <MonitorPlay className="mt-2 h-5 w-5 shrink-0 text-primary" />
           <div className="w-full max-w-sm">
             <Select
-              aria-label="Player style"
+              aria-label={t("admin.modules.player_title")}
               value={value}
               onChange={(e) => setChoice(e.target.value)}
               disabled={setting.loading}
             >
-              <option value={THEME_STYLE}>Follow the theme ({nameOf(themeLayout)})</option>
+              <option value={THEME_STYLE}>{t("admin.modules.follow_theme", { name: nameOf(themeLayout) })}</option>
               {BUILTIN_STYLES.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name}: {s.description}
+                  {s.name}: {t(STYLE_DESC_KEY[s.id] ?? "admin.modules.style_desc_minimal")}
                 </option>
               ))}
               {skins?.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} (custom skin)
+                  {t("admin.modules.custom_skin", { name: s.name })}
                 </option>
               ))}
-              {!known && <option value={value}>{value} (not installed, using Minimal)</option>}
+              {!known && <option value={value}>{t("admin.modules.not_installed", { value })}</option>}
             </Select>
-            {!skinsEnabled && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Turn on Custom player skins above to choose a skin from the player-skins folder.
-              </p>
-            )}
+            {!skinsEnabled && <p className="mt-2 text-xs text-muted-foreground">{t("admin.modules.skins_hint")}</p>}
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Button size="sm" onClick={save} disabled={value === savedStyle}>
-            Save
+            {t("common.save")}
           </Button>
-          {saved && <span className="text-sm text-muted-foreground">Saved. Players use it from the next video.</span>}
+          {saved && <span className="text-sm text-muted-foreground">{t("admin.modules.player_saved")}</span>}
         </div>
         <ErrorNote message={error} />
       </div>
@@ -146,6 +150,7 @@ function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
 }
 
 function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () => void }) {
+  const { t } = useTranslation();
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -191,7 +196,11 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
             </div>
           </div>
         </div>
-        <Switch checked={m.enabled} onChange={(v) => update({ enabled: v })} label={`Enable ${m.name}`} />
+        <Switch
+          checked={m.enabled}
+          onChange={(v) => update({ enabled: v })}
+          label={t("common.enable", { name: m.name })}
+        />
       </div>
       {boolFields.length > 0 && (
         <div className="space-y-4 border-t p-5">
@@ -218,7 +227,7 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
             <Field key={f.key} label={f.label} help={f.help ?? undefined}>
               <Input
                 type={f.kind === "secret" ? "password" : "text"}
-                placeholder={f.kind === "secret" && m.secrets_set.includes(f.key) ? "•••••••• (saved)" : ""}
+                placeholder={f.kind === "secret" && m.secrets_set.includes(f.key) ? t("admin.modules.saved_value") : ""}
                 value={values[f.key] ?? (f.kind === "secret" ? "" : (m.values[f.key] ?? ""))}
                 onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
                 autoComplete="off"
@@ -227,9 +236,9 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
           ))}
           <div className="flex items-center gap-3">
             <Button size="sm" onClick={saveSettings} disabled={Object.keys(values).length === 0}>
-              Save
+              {t("common.save")}
             </Button>
-            {saved && <span className="text-sm text-muted-foreground">Saved.</span>}
+            {saved && <span className="text-sm text-muted-foreground">{t("common.saved")}</span>}
           </div>
           <ErrorNote message={error} />
         </div>
@@ -240,6 +249,7 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
 
 /** Clears the signed-in viewer's remembered audio and subtitle choices (not other viewers'). */
 function ForgetTrackChoices() {
+  const { t } = useTranslation();
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const forget = async () => {
@@ -256,12 +266,10 @@ function ForgetTrackChoices() {
   return (
     <div className="flex items-center gap-3 border-t p-5">
       <Button size="sm" variant="outline" onClick={forget} disabled={state === "busy"}>
-        Forget my track choices
+        {t("admin.modules.forget_tracks")}
       </Button>
       <span className="text-sm text-muted-foreground">
-        {state === "done"
-          ? "Done. Every show starts with its default tracks until you pick again."
-          : "Only clears your own choices."}
+        {state === "done" ? t("admin.modules.forget_done") : t("admin.modules.forget_hint")}
       </span>
       <ErrorNote message={error} />
     </div>

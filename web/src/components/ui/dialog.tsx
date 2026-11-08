@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useHotkey } from "@tanstack/react-hotkeys";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 
 export function Dialog({
@@ -13,6 +14,7 @@ export function Dialog({
   title: string;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   useHotkey("Escape", onClose, { enabled: open });
   if (!open) return null;
   return (
@@ -26,7 +28,11 @@ export function Dialog({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="cursor-pointer rounded-md p-1 hover:bg-accent" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="cursor-pointer rounded-md p-1 hover:bg-accent"
+            aria-label={t("common.close")}
+          >
             <X className="h-5 w-5" />
           </button>
         </div>

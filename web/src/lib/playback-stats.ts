@@ -7,6 +7,7 @@
 // and "trace" (everything else, for debugging a stream).
 
 import type Hls from "hls.js";
+import { i18n } from "@/i18n";
 import { formatBytes, formatClock } from "./format";
 import { describeAutoTracks } from "./subtitles";
 import type { MediaFile, PlaybackStart, SessionStatus } from "./types";
@@ -100,7 +101,7 @@ export function networkStateName(n: number): string {
 export function formatRanges(r: TimeRanges): string {
   const out: string[] = [];
   for (let i = 0; i < r.length; i++) out.push(`${r.start(i).toFixed(1)}–${r.end(i).toFixed(1)}`);
-  return out.length ? out.join(", ") : "none";
+  return out.length ? out.join(", ") : i18n.t("common.none");
 }
 
 /** Seconds buffered ahead of `t`. */
@@ -124,7 +125,7 @@ function hdrLabel(hdr: string | undefined, dvProfile?: number | null, compat?: n
   }
 }
 
-const yesNo = (b: boolean) => (b ? "yes" : "no");
+const yesNo = (b: boolean) => i18n.t(b ? "common.yes" : "common.no");
 const or = (v: string | number | null | undefined, fallback = "–") =>
   v === null || v === undefined || v === "" ? fallback : String(v);
 
@@ -282,15 +283,15 @@ export class PlaybackStats {
     const frames = this.renderFps();
     const ahead = bufferedAhead(v.buffered, v.currentTime);
     const level = this.hls && this.hls.currentLevel >= 0 ? this.hls.levels[this.hls.currentLevel] : null;
-    const method = playback ? METHOD_LABEL[playback.method] : "–";
+    const method = playback ? methodLabel(playback.method) : "–";
     const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
     const throughput = this.throughput();
 
     // ---- basic ---------------------------------------------------------
     const videoRows: [string, string][] = [
-      ["Codec", transcodingVideo ? `${codecName(src?.codec)} → H.264` : codecName(src?.codec)],
+      [i18n.t("player.info.codec"), transcodingVideo ? `${codecName(src?.codec)} → H.264` : codecName(src?.codec)],
       [
-        "Resolution",
+        i18n.t("player.info.resolution"),
         transcodingVideo && videoOut.kind === "encode"
           ? `${src ? `${src.width}×${src.height}` : "–"} → ${videoOut.width}×${videoOut.height}`
           : src
@@ -299,179 +300,203 @@ export class PlaybackStats {
               ? `${v.videoWidth}×${v.videoHeight}`
               : "–",
       ],
-      ["FPS", src?.frame_rate ? src.frame_rate.toFixed(3).replace(/\.?0+$/, "") : "–"],
+      [i18n.t("player.info.fps"), src?.frame_rate ? src.frame_rate.toFixed(3).replace(/\.?0+$/, "") : "–"],
       [
-        "Dynamic range",
+        i18n.t("player.info.dynamic_range"),
         `${hdrLabel(src?.hdr, src?.dv_profile, src?.dv_compat_id)}${src ? ` · ${src.bit_depth}-bit` : ""}`,
       ],
-      ["Aspect", aspectRatio(v.videoWidth || src?.width || 0, v.videoHeight || src?.height || 0)],
+      [i18n.t("player.info.aspect"), aspectRatio(v.videoWidth || src?.width || 0, v.videoHeight || src?.height || 0)],
     ];
-    if (src?.profile) videoRows.splice(1, 0, ["Profile", src.profile]);
+    if (src?.profile) videoRows.splice(1, 0, [i18n.t("player.info.profile"), src.profile]);
 
     const audioRows: [string, string][] = [
       [
-        "Codec",
+        i18n.t("player.info.codec"),
         transcodingAudio && audioOut.kind === "encode"
           ? `${codecName(audio?.codec)} → ${codecName(audioOut.codec)}`
           : codecName(audio?.codec),
       ],
       [
-        "Channels",
+        i18n.t("player.info.channels"),
         transcodingAudio && audioOut.kind === "encode"
           ? `${audio?.channel_layout ?? audio?.channels ?? "–"} → ${audioOut.channels}ch`
           : or(audio?.channel_layout ?? (audio ? `${audio.channels}ch` : null)),
       ],
-      ["Sample rate", audio?.sample_rate ? `${(audio.sample_rate / 1000).toFixed(1)} kHz` : "–"],
-      ["Bitrate", formatBitrate(audio?.bitrate)],
-      ["Language", or(audio?.language?.toUpperCase() ?? audio?.title)],
+      [i18n.t("player.info.sample_rate"), audio?.sample_rate ? `${(audio.sample_rate / 1000).toFixed(1)} kHz` : "–"],
+      [i18n.t("player.info.bitrate"), formatBitrate(audio?.bitrate)],
+      [i18n.t("player.info.language"), or(audio?.language?.toUpperCase() ?? audio?.title)],
     ];
 
     const colorRows: [string, string][] = [
-      ["Pixel format", or(src?.pix_fmt)],
-      ["Matrix", or(src?.color_space)],
-      ["Primaries", or(src?.color_primaries)],
-      ["Transfer", or(src?.color_transfer)],
+      [i18n.t("player.info.pixel_format"), or(src?.pix_fmt)],
+      [i18n.t("player.info.matrix"), or(src?.color_space)],
+      [i18n.t("player.info.primaries"), or(src?.color_primaries)],
+      [i18n.t("player.info.transfer"), or(src?.color_transfer)],
       [
-        "Range",
+        i18n.t("player.info.range"),
         or(src?.color_range === "tv" ? "limited (tv)" : src?.color_range === "pc" ? "full (pc)" : src?.color_range),
       ],
     ];
 
     const perfRows: [string, string][] = [
-      ["Render FPS", frames.fps === null ? (v.paused ? "paused" : "measuring…") : frames.fps.toFixed(2)],
-      ["Dropped frames", frames.total ? `${frames.dropped} of ${frames.total}` : String(frames.dropped)],
-      ["Stalls", this.stalls ? `${this.stalls} (${(this.stalledMs / 1000).toFixed(1)} s)` : "0"],
-      ["Speed", `${v.playbackRate}×`],
+      [
+        i18n.t("player.info.render_fps"),
+        frames.fps === null
+          ? v.paused
+            ? i18n.t("player.info.paused")
+            : i18n.t("player.info.measuring")
+          : frames.fps.toFixed(2),
+      ],
+      [
+        i18n.t("player.info.dropped_frames"),
+        frames.total ? `${frames.dropped} of ${frames.total}` : String(frames.dropped),
+      ],
+      [i18n.t("player.info.stalls"), this.stalls ? `${this.stalls} (${(this.stalledMs / 1000).toFixed(1)} s)` : "0"],
+      [i18n.t("player.info.speed"), `${v.playbackRate}×`],
     ];
 
     const bufferRows: [string, string][] = [
-      ["Buffered ahead", `${ahead.toFixed(1)} s`],
-      ["Download speed", formatBitrate(throughput)],
+      [i18n.t("player.info.buffered_ahead"), `${ahead.toFixed(1)} s`],
+      [i18n.t("player.info.download_speed"), formatBitrate(throughput)],
       [
-        "Stream bitrate",
+        i18n.t("player.info.stream_bitrate"),
         formatBitrate(
           level?.bitrate ?? (transcodingVideo && videoOut.kind === "encode" ? videoOut.bitrate : info?.bitrate),
         ),
       ],
-      ["Data loaded", this.hls ? formatBytes(this.totalBytes) : "–"],
+      [i18n.t("player.info.data_loaded"), this.hls ? formatBytes(this.totalBytes) : "–"],
     ];
 
     const appRows: [string, string][] = [
-      ["Player", this.hls ? `Kinora web · hls.js ${this.hlsVersion}` : "Kinora web · native"],
-      ["Play method", method],
-      ...(playback?.method === "transcode" ? ([["Transcoder", playback.hardware]] as [string, string][]) : []),
-      ["Memory", mem ? formatBytes(mem.usedJSHeapSize) : "–"],
-      ["Subtitles", or(ctx.subtitleLabel, "off")],
+      [i18n.t("player.info.player"), this.hls ? `Kinora web · hls.js ${this.hlsVersion}` : "Kinora web · native"],
+      [i18n.t("player.info.play_method"), method],
+      ...(playback?.method === "transcode"
+        ? ([[i18n.t("player.info.transcoder"), playback.hardware]] as [string, string][])
+        : []),
+      [i18n.t("player.info.memory"), mem ? formatBytes(mem.usedJSHeapSize) : "–"],
+      [i18n.t("player.subtitles"), or(ctx.subtitleLabel, i18n.t("player.subtitles_off"))],
     ];
 
     const basic: InfoSection[] = [
-      { title: "Video", icon: "video", rows: videoRows },
-      { title: "Audio", icon: "audio", rows: audioRows },
-      { title: "Color", icon: "color", rows: colorRows },
-      { title: "Performance", icon: "performance", rows: perfRows },
-      { title: "Buffer", icon: "buffer", rows: bufferRows },
-      { title: "App", icon: "app", rows: appRows },
+      { title: i18n.t("player.info.video"), icon: "video", rows: videoRows },
+      { title: i18n.t("player.info.audio"), icon: "audio", rows: audioRows },
+      { title: i18n.t("player.info.color"), icon: "color", rows: colorRows },
+      { title: i18n.t("player.info.performance"), icon: "performance", rows: perfRows },
+      { title: i18n.t("player.info.buffer"), icon: "buffer", rows: bufferRows },
+      { title: i18n.t("player.info.app"), icon: "app", rows: appRows },
     ];
 
     // ---- trace ---------------------------------------------------------
     const q = v.getVideoPlaybackQuality?.();
     const element: [string, string][] = [
-      ["currentTime", v.currentTime.toFixed(3)],
-      ["duration", Number.isFinite(v.duration) ? v.duration.toFixed(3) : String(v.duration)],
-      ["readyState", readyStateName(v.readyState)],
-      ["networkState", networkStateName(v.networkState)],
-      ["paused / ended / seeking", `${yesNo(v.paused)} / ${yesNo(v.ended)} / ${yesNo(v.seeking)}`],
-      ["buffered", formatRanges(v.buffered)],
-      ["seekable", formatRanges(v.seekable)],
-      ["decoded size", v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : "–"],
-      ["volume", `${Math.round(v.volume * 100)}%${v.muted ? " (muted)" : ""}`],
+      [i18n.t("player.trace.current_time"), v.currentTime.toFixed(3)],
+      [i18n.t("player.trace.duration"), Number.isFinite(v.duration) ? v.duration.toFixed(3) : String(v.duration)],
+      [i18n.t("player.trace.ready_state"), readyStateName(v.readyState)],
+      [i18n.t("player.trace.network_state"), networkStateName(v.networkState)],
+      [i18n.t("player.trace.paused_ended_seeking"), `${yesNo(v.paused)} / ${yesNo(v.ended)} / ${yesNo(v.seeking)}`],
+      [i18n.t("player.trace.buffered"), formatRanges(v.buffered)],
+      [i18n.t("player.trace.seekable"), formatRanges(v.seekable)],
+      [i18n.t("player.trace.decoded_size"), v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : "–"],
+      [i18n.t("player.trace.volume"), `${Math.round(v.volume * 100)}%${v.muted ? i18n.t("player.trace.muted") : ""}`],
       [
-        "frames total / dropped / corrupted",
+        i18n.t("player.trace.frames"),
         q ? `${q.totalVideoFrames} / ${q.droppedVideoFrames} / ${q.corruptedVideoFrames ?? 0}` : "–",
       ],
       ...(v.webkitDecodedFrameCount !== undefined
         ? ([
-            ["decoded frames (webkit)", String(v.webkitDecodedFrameCount)],
-            ["video bytes decoded", formatBytes(v.webkitVideoDecodedByteCount ?? 0)],
-            ["audio bytes decoded", formatBytes(v.webkitAudioDecodedByteCount ?? 0)],
+            [i18n.t("player.trace.decoded_frames_webkit"), String(v.webkitDecodedFrameCount)],
+            [i18n.t("player.trace.video_bytes_decoded"), formatBytes(v.webkitVideoDecodedByteCount ?? 0)],
+            [i18n.t("player.trace.audio_bytes_decoded"), formatBytes(v.webkitAudioDecodedByteCount ?? 0)],
           ] as [string, string][])
         : []),
-      ["currentSrc", v.currentSrc ? v.currentSrc.slice(0, 80) : "–"],
-      ["media error", v.error ? `${v.error.code} ${v.error.message}` : "none"],
+      [i18n.t("player.trace.current_src"), v.currentSrc ? v.currentSrc.slice(0, 80) : "–"],
+      [i18n.t("player.trace.media_error"), v.error ? `${v.error.code} ${v.error.message}` : i18n.t("common.none")],
     ];
 
     const session: [string, string][] = [
-      ["method", playback ? `${playback.method} (${method})` : "–"],
-      ["session", or(playback?.session_id, "none (direct play)")],
-      ["url", or(playback?.url)],
-      ["video plan", plan?.video ? JSON.stringify(plan.video) : "none"],
-      ["audio plan", plan?.audio ? JSON.stringify(plan.audio) : "none"],
-      ["audio stream index", or(plan?.audio_index)],
-      ["tracks picked from", describeAutoTracks(playback)],
-      ["reasons", plan?.reasons.length ? plan.reasons.join("; ") : "none"],
-      ["hardware", or(playback?.hardware)],
-      ["recoveries", String(this.recoveries)],
-      ["open for", formatClock((performance.now() - this.started) / 1000)],
+      [i18n.t("player.trace.method"), playback ? `${playback.method} (${method})` : "–"],
+      [i18n.t("player.trace.session_id"), or(playback?.session_id, i18n.t("player.trace.none_direct_play"))],
+      [i18n.t("player.trace.url"), or(playback?.url)],
+      [i18n.t("player.trace.video_plan"), plan?.video ? JSON.stringify(plan.video) : i18n.t("common.none")],
+      [i18n.t("player.trace.audio_plan"), plan?.audio ? JSON.stringify(plan.audio) : i18n.t("common.none")],
+      [i18n.t("player.trace.audio_stream_index"), or(plan?.audio_index)],
+      [i18n.t("player.trace.tracks_picked_from"), describeAutoTracks(playback)],
+      [i18n.t("player.trace.reasons"), plan?.reasons.length ? plan.reasons.join("; ") : i18n.t("common.none")],
+      [i18n.t("player.trace.hardware"), or(playback?.hardware)],
+      [i18n.t("player.trace.recoveries"), String(this.recoveries)],
+      [i18n.t("player.trace.open_for"), formatClock((performance.now() - this.started) / 1000)],
     ];
 
     const st = this.status;
     const transcoder: [string, string][] = st
       ? [
-          ["ffmpeg running", yesNo(st.running)],
-          ["encoder", st.hw],
+          [i18n.t("player.trace.ffmpeg_running"), yesNo(st.running)],
+          [i18n.t("player.trace.encoder"), st.hw],
           [
-            "started at segment",
+            i18n.t("player.trace.started_at_segment"),
             `${st.started_at_segment} (${formatClock(st.started_at_segment * st.segment_seconds)})`,
           ],
           [
-            "last segment requested",
+            i18n.t("player.trace.last_segment_requested"),
             `${st.last_requested_segment} (${formatClock(st.last_requested_segment * st.segment_seconds)})`,
           ],
           [
-            "transcoded through",
+            i18n.t("player.trace.transcoded_through"),
             st.transcoded_through === null
-              ? "nothing yet"
-              : `${st.transcoded_through} (${formatClock((st.transcoded_through + 1) * st.segment_seconds)}, ${Math.round((st.transcoded_through + 1) * st.segment_seconds - v.currentTime)} s ahead of playback)`,
+              ? i18n.t("player.trace.nothing_yet")
+              : `${st.transcoded_through} (${formatClock((st.transcoded_through + 1) * st.segment_seconds)}, ${i18n.t("player.trace.ahead_of_playback", { count: Math.round((st.transcoded_through + 1) * st.segment_seconds - v.currentTime) })})`,
           ],
-          ["session age", formatClock(st.running_seconds)],
-          ["last ffmpeg line", or(st.last_ffmpeg_line, "none")],
-          ["status updated", `${Math.round((performance.now() - this.statusAt) / 1000)} s ago`],
+          [i18n.t("player.trace.session_age"), formatClock(st.running_seconds)],
+          [i18n.t("player.trace.last_ffmpeg_line"), or(st.last_ffmpeg_line, i18n.t("common.none"))],
+          [
+            i18n.t("player.trace.status_updated"),
+            i18n.t("player.trace.s_ago", { count: Math.round((performance.now() - this.statusAt) / 1000) }),
+          ],
         ]
-      : [["status", playback?.session_id ? "waiting for the first update" : "no server session (direct play)"]];
+      : [["status", playback?.session_id ? i18n.t("player.trace.waiting_update") : i18n.t("player.trace.no_session")]];
 
     const hlsRows: [string, string][] = this.hls
       ? [
-          ["version", or(this.hlsVersion)],
-          ["level", level ? `${level.width}×${level.height} · ${formatBitrate(level.bitrate)}` : "–"],
-          ["codecs", level ? [level.videoCodec, level.audioCodec].filter(Boolean).join(", ") || "–" : "–"],
-          ["bandwidth estimate", formatBitrate(this.hls.bandwidthEstimate)],
-          ["target buffer", `${this.hls.config.maxBufferLength} s (back ${this.hls.config.backBufferLength} s)`],
+          [i18n.t("player.trace.version"), or(this.hlsVersion)],
           [
-            "fragments loaded",
+            i18n.t("player.trace.level"),
+            level ? `${level.width}×${level.height} · ${formatBitrate(level.bitrate)}` : "–",
+          ],
+          [
+            i18n.t("player.trace.codecs"),
+            level ? [level.videoCodec, level.audioCodec].filter(Boolean).join(", ") || "–" : "–",
+          ],
+          [i18n.t("player.trace.bandwidth_estimate"), formatBitrate(this.hls.bandwidthEstimate)],
+          [
+            i18n.t("player.trace.target_buffer"),
+            `${this.hls.config.maxBufferLength} s (back ${this.hls.config.backBufferLength} s)`,
+          ],
+          [
+            i18n.t("player.trace.fragments_loaded"),
             `${this.frags.length ? this.frags[this.frags.length - 1].sn : "–"} (last) · ${formatBytes(this.totalBytes)} total`,
           ],
         ]
-      : [["hls.js", "not used"]];
+      : [["hls.js", i18n.t("player.trace.not_used")]];
 
     const fragRows: [string, string][] = this.frags
       .slice()
       .reverse()
       .map((f) => [
         `seg ${f.sn}`,
-        `${formatBytes(f.bytes)} in ${Math.round(f.ms)} ms · ${formatBitrate((f.bytes * 8 * 1000) / f.ms)} · ${f.duration.toFixed(1)} s · ${Math.round((performance.now() - f.at) / 1000)} s ago`,
+        `${formatBytes(f.bytes)} ${i18n.t("player.trace.frag_in", { ms: Math.round(f.ms) })} · ${formatBitrate((f.bytes * 8 * 1000) / f.ms)} · ${f.duration.toFixed(1)} s · ${i18n.t("player.trace.s_ago", { count: Math.round((performance.now() - f.at) / 1000) })}`,
       ]);
 
     const fileRows: [string, string][] = file
       ? [
-          ["path", file.path],
-          ["size", formatBytes(file.size)],
-          ["container", or(info?.container)],
-          ["overall bitrate", formatBitrate(info?.bitrate)],
+          [i18n.t("player.trace.path"), file.path],
+          [i18n.t("player.trace.size"), formatBytes(file.size)],
+          [i18n.t("player.trace.container"), or(info?.container)],
+          [i18n.t("player.trace.overall_bitrate"), formatBitrate(info?.bitrate)],
           [
-            "video stream",
+            i18n.t("player.trace.video_stream"),
             src
               ? `#${src.index ?? "?"} ${src.codec} ${src.profile ?? ""} ${formatBitrate(src.bitrate)}`.trim()
-              : "none",
+              : i18n.t("common.none"),
           ],
           ...(info?.audio ?? []).map(
             (a) =>
@@ -483,7 +508,7 @@ export class PlaybackStats {
                   a.channel_layout ?? `${a.channels}ch`,
                   a.language,
                   a.title,
-                  a.is_default ? "default" : null,
+                  a.is_default ? i18n.t("player.info.default") : null,
                 ]
                   .filter(Boolean)
                   .join(" · "),
@@ -493,7 +518,9 @@ export class PlaybackStats {
             (s) =>
               [
                 `subtitle #${s.index}`,
-                [s.codec, s.language, s.title, s.is_text ? "text" : "image"].filter(Boolean).join(" · "),
+                [s.codec, s.language, s.title, s.is_text ? i18n.t("player.info.text") : i18n.t("player.info.image")]
+                  .filter(Boolean)
+                  .join(" · "),
               ] as [string, string],
           ),
         ]
@@ -506,38 +533,42 @@ export class PlaybackStats {
     const canPlay = (t: string) => v.canPlayType(t) || "no";
     const mseCan = (t: string) => (typeof MediaSource !== "undefined" && MediaSource.isTypeSupported(t) ? "yes" : "no");
     const deviceRows: [string, string][] = [
-      ["viewport", `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}x`],
-      ["screen", `${screen.width}×${screen.height}`],
+      [i18n.t("player.trace.viewport"), `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}x`],
+      [i18n.t("player.trace.screen"), `${screen.width}×${screen.height}`],
       [
-        "HEVC (MSE / native)",
+        i18n.t("player.trace.hevc"),
         `${mseCan('video/mp4; codecs="hvc1.1.6.L120.90"')} / ${canPlay('video/mp4; codecs="hvc1.1.6.L120.90"')}`,
       ],
-      ["AV1 (MSE)", mseCan('video/mp4; codecs="av01.0.08M.08"')],
-      ["E-AC3 (MSE)", mseCan('audio/mp4; codecs="ec-3"')],
-      ["CPU threads", or(navigator.hardwareConcurrency)],
-      ["device memory", nav.deviceMemory ? `${nav.deviceMemory} GB` : "–"],
+      [i18n.t("player.trace.av1"), mseCan('video/mp4; codecs="av01.0.08M.08"')],
+      [i18n.t("player.trace.eac3"), mseCan('audio/mp4; codecs="ec-3"')],
+      [i18n.t("player.trace.cpu_threads"), or(navigator.hardwareConcurrency)],
+      [i18n.t("player.trace.device_memory"), nav.deviceMemory ? `${nav.deviceMemory} GB` : "–"],
       [
-        "connection",
+        i18n.t("player.trace.connection"),
         nav.connection?.effectiveType
           ? `${nav.connection.effectiveType} · ${nav.connection.downlink ?? "?"} Mbps`
           : "–",
       ],
-      ["user agent", navigator.userAgent],
+      [i18n.t("player.trace.user_agent"), navigator.userAgent],
     ];
 
     const trace: InfoSection[] = [
-      { title: "Session", icon: "server", rows: session },
-      { title: "Transcoder", icon: "server", rows: transcoder },
-      { title: "Video element", icon: "video", rows: element },
+      { title: i18n.t("player.trace.session"), icon: "server", rows: session },
+      { title: i18n.t("player.info.transcoder"), icon: "server", rows: transcoder },
+      { title: i18n.t("player.trace.video_element"), icon: "video", rows: element },
       { title: "hls.js", icon: "network", rows: hlsRows },
-      { title: "Recent segments", icon: "list", rows: fragRows.length ? fragRows : [["–", "none yet"]] },
       {
-        title: "Errors and warnings",
+        title: i18n.t("player.trace.recent_segments"),
         icon: "list",
-        rows: this.errors.length ? this.errors.map((e, i) => [`#${i + 1}`, e]) : [["–", "none"]],
+        rows: fragRows.length ? fragRows : [["–", i18n.t("player.trace.none_yet")]],
       },
-      { title: "Source file", icon: "list", rows: fileRows },
-      { title: "Device", icon: "app", rows: deviceRows },
+      {
+        title: i18n.t("player.trace.errors"),
+        icon: "list",
+        rows: this.errors.length ? this.errors.map((e, i) => [`#${i + 1}`, e]) : [["–", i18n.t("common.none")]],
+      },
+      { title: i18n.t("player.trace.source_file"), icon: "list", rows: fileRows },
+      { title: i18n.t("player.trace.device"), icon: "app", rows: deviceRows },
     ];
 
     return { basic, trace };
@@ -550,11 +581,13 @@ interface FragStats {
   loading: { start: number; end: number };
 }
 
-const METHOD_LABEL: Record<PlaybackStart["method"], string> = {
-  direct_play: "Direct play",
-  remux: "Direct stream",
-  transcode: "Transcoding",
+const METHOD_KEY: Record<PlaybackStart["method"], string> = {
+  direct_play: "player.method_direct_play",
+  remux: "player.method_remux",
+  transcode: "player.method_transcode",
 };
+
+const methodLabel = (m: PlaybackStart["method"]) => i18n.t(METHOD_KEY[m] as "player.method_direct_play");
 
 /** Plain text of every section, for "Copy" (bug reports). */
 export function infoToText(info: PlayerInfo): string {

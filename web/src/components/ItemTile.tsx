@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { episodeCode, progressPercent } from "@/lib/format";
 import type { ItemCard } from "@/lib/types";
@@ -7,6 +8,7 @@ import { Artwork } from "./Artwork";
 
 /** Poster tile (movies, series, seasons) or wide thumbnail (episodes, continue watching). */
 export function ItemTile({ item, wide = false, className }: { item: ItemCard; wide?: boolean; className?: string }) {
+  const { t } = useTranslation();
   const isEpisode = item.kind === "episode";
   const useWide = wide || isEpisode;
   const progress = progressPercent(item.position_ms, item.duration_ms);
@@ -16,7 +18,7 @@ export function ItemTile({ item, wide = false, className }: { item: ItemCard; wi
     : item.year
       ? String(item.year)
       : item.kind === "series"
-        ? "Series"
+        ? t("item.series")
         : "";
 
   return (

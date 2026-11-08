@@ -20,9 +20,12 @@
     "@tanstack/react-hotkeys": "0.22.0",
     "clsx": "^2.1.1",
     "hls.js": "^1.7.4",
+    "i18next": "^27.0.1",
+    "i18next-browser-languagedetector": "^8.3.0",
     "lucide-react": "^1.70.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-i18next": "^18.0.0",
     "react-router": "^7.18.5",
     "tailwind-merge": "^3.7.0"
   },

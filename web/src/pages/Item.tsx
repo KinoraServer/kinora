@@ -1,5 +1,6 @@
 import { Check, ChevronLeft, Info, Play, RotateCcw, Star } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { Artwork } from "@/components/Artwork";
 import { ItemGrid, ItemTile } from "@/components/ItemTile";
@@ -12,6 +13,7 @@ import type { ItemDetail } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function ItemPage() {
+  const { t } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
   const { data: item, error, loading, reload } = useApi<ItemDetail>(`api/items/${id}`, [id]);
@@ -20,7 +22,7 @@ export function ItemPage() {
   useEffect(() => setShowFiles(false), [id]);
 
   if (loading && !item) return <Spinner className="mx-auto mt-24" />;
-  if (error || !item) return <ErrorNote message={error ?? "Not found"} />;
+  if (error || !item) return <ErrorNote message={error ?? t("item.not_found")} />;
 
   const playable = item.kind === "movie" || item.kind === "episode";
   const target = playable ? item : item.next_up;
@@ -59,7 +61,7 @@ export function ItemPage() {
             to={`/item/${item.parent_id}`}
             className="absolute top-4 left-4 flex cursor-pointer items-center gap-1 rounded-md bg-background/60 px-2 py-1 text-sm backdrop-blur sm:left-8"
           >
-            <ChevronLeft className="h-4 w-4" /> Back
+            <ChevronLeft className="h-4 w-4" /> {t("common.back")}
           </Link>
         )}
       </div>
@@ -112,24 +114,29 @@ export function ItemPage() {
               <Button size="lg" onClick={() => play()}>
                 <Play className="h-5 w-5 fill-current" />
                 {resumeMs > 0
-                  ? "Resume"
+                  ? t("item.resume")
                   : playable
-                    ? "Play"
-                    : `Play ${episodeCode(target.season_number, target.episode_number)}`}
+                    ? t("item.play")
+                    : t("item.play_episode", { code: episodeCode(target.season_number, target.episode_number) })}
               </Button>
             )}
             {resumeMs > 0 && (
               <Button size="lg" variant="secondary" onClick={() => play(true)}>
-                <RotateCcw className="h-4 w-4" /> From start
+                <RotateCcw className="h-4 w-4" /> {t("item.from_start")}
               </Button>
             )}
             {item.kind !== "season" || item.children.length > 0 ? (
               <Button size="lg" variant="secondary" onClick={togglePlayed}>
-                <Check className="h-4 w-4" /> {item.played ? "Mark unwatched" : "Mark watched"}
+                <Check className="h-4 w-4" /> {item.played ? t("item.mark_unwatched") : t("item.mark_watched")}
               </Button>
             ) : null}
             {file && (
-              <Button size="lg" variant="ghost" onClick={() => setShowFiles((s) => !s)} aria-label="File info">
+              <Button
+                size="lg"
+                variant="ghost"
+                onClick={() => setShowFiles((s) => !s)}
+                aria-label={t("item.file_info")}
+              >
                 <Info className="h-4 w-4" />
               </Button>
             )}
@@ -153,19 +160,24 @@ export function ItemPage() {
                 </p>
                 {f.info?.video && (
                   <p>
-                    Video: {f.info.video.codec} {f.info.video.width}×{f.info.video.height} {f.info.video.bit_depth}-bit{" "}
-                    {f.info.video.hdr !== "sdr" && f.info.video.hdr}
-                    {f.info.video.dv_profile ? ` profile ${f.info.video.dv_profile}` : ""}
+                    {t("item.video_info", {
+                      details:
+                        `${f.info.video.codec} ${f.info.video.width}×${f.info.video.height} ${f.info.video.bit_depth}-bit` +
+                        (f.info.video.hdr !== "sdr" && f.info.video.hdr ? ` ${f.info.video.hdr}` : "") +
+                        (f.info.video.dv_profile ? ` profile ${f.info.video.dv_profile}` : ""),
+                    })}
                   </p>
                 )}
                 {f.info?.audio.map((a) => (
                   <p key={a.index}>
-                    Audio: {a.codec} {a.channels}ch {a.language ?? ""} {a.title ?? ""}
+                    {t("item.audio_info", {
+                      details: [a.codec, `${a.channels}ch`, a.language, a.title].filter(Boolean).join(" "),
+                    })}
                   </p>
                 ))}
                 {f.info?.subtitles.map((s) => (
                   <p key={s.index}>
-                    Subtitles: {s.codec} {s.language ?? ""} {s.title ?? ""}
+                    {t("item.subtitle_info", { details: [s.codec, s.language, s.title].filter(Boolean).join(" ") })}
                   </p>
                 ))}
               </div>
@@ -175,13 +187,13 @@ export function ItemPage() {
 
       {item.kind === "series" && item.children.length > 0 && (
         <section className="mt-12 space-y-4">
-          <h2 className="text-xl font-semibold">Seasons</h2>
+          <h2 className="text-xl font-semibold">{t("item.seasons")}</h2>
           <ItemGrid items={item.children} />
         </section>
       )}
       {item.kind === "season" && (
         <section className="mt-12 space-y-4">
-          <h2 className="text-xl font-semibold">Episodes</h2>
+          <h2 className="text-xl font-semibold">{t("item.episodes")}</h2>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-x-4 gap-y-6">
             {item.children.map((ep) => (
               <ItemTile key={ep.id} item={ep} />

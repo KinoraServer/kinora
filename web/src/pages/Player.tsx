@@ -2,6 +2,7 @@ import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { MediaPlayer, type PlayerChoice } from "@/components/MediaPlayer";
+import { i18n } from "@/i18n";
 import { api } from "@/lib/api";
 import { browserCaps } from "@/lib/caps";
 import { PlaybackStats } from "@/lib/playback-stats";
@@ -15,11 +16,16 @@ const KEEPALIVE_MS = 10_000;
 /** Give up recovering a lost stream after this many tries in a minute. */
 const MAX_RECOVERIES = 3;
 
-const METHOD_LABEL: Record<PlaybackStart["method"], string> = {
-  direct_play: "Direct play",
-  remux: "Direct stream",
-  transcode: "Transcoding",
+const METHOD_KEY: Record<
+  PlaybackStart["method"],
+  "player.method_direct_play" | "player.method_remux" | "player.method_transcode"
+> = {
+  direct_play: "player.method_direct_play",
+  remux: "player.method_remux",
+  transcode: "player.method_transcode",
 };
+
+const methodLabel = (m: PlaybackStart["method"]) => i18n.t(METHOD_KEY[m]);
 
 /** Fire-and-forget request that survives page unload. */
 function beacon(method: string, url: string, body: unknown) {
@@ -111,7 +117,7 @@ function PlayerView({ id }: { id: string | undefined }) {
     const now = Date.now();
     recoveries.current = recoveries.current.filter((t) => now - t < 60_000);
     if (recoveries.current.length >= MAX_RECOVERIES) {
-      setError(`Playback error: ${why}`);
+      setError(i18n.t("player.playback_error", { reason: why }));
       return;
     }
     recoveries.current.push(now);
@@ -164,13 +170,13 @@ function PlayerView({ id }: { id: string | undefined }) {
             if (!data.fatal) return;
             // 404: the server already cleaned this stream up.
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.response?.code === 404) recover(data.details);
-            else setError(`Playback error: ${data.details}`);
+            else setError(i18n.t("player.playback_error", { reason: data.details }));
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           video.src = p.url; // Safari / iOS native HLS
           video.addEventListener("loadedmetadata", () => start > 0 && (video.currentTime = start), { once: true });
         } else {
-          setError("This browser can't play HLS streams.");
+          setError(i18n.t("player.no_hls"));
           return;
         }
         if (stayPaused.current) {
@@ -254,7 +260,7 @@ function PlayerView({ id }: { id: string | undefined }) {
         startAt.current = v.currentTime || startAt.current;
         setForceTranscode(true);
       } else if (v.error) {
-        setError(`Playback error (${v.error.code})`);
+        setError(i18n.t("player.playback_error_code", { code: v.error.code }));
       }
     };
     v.addEventListener("error", onError);
@@ -309,14 +315,19 @@ function PlayerView({ id }: { id: string | undefined }) {
     playback && playback.subtitles.length > 0
       ? {
           options: [
-            { value: "off", label: "Off" },
-            ...playback.subtitles.map((t) => ({
-              value: String(t.index),
+            { value: "off", label: i18n.t("player.subtitles_off") },
+            ...playback.subtitles.map((s) => ({
+              value: String(s.index),
               label:
-                ([t.language?.toUpperCase(), t.label !== t.language ? t.label : null, t.is_forced ? "forced" : null]
+                ([
+                  s.language?.toUpperCase(),
+                  s.label !== s.language ? s.label : null,
+                  s.is_forced ? i18n.t("player.subtitle_forced") : null,
+                ]
                   .filter(Boolean)
-                  .join(" · ") || `Track ${t.index}`) + (t.supported ? "" : " (image subtitles, not supported yet)"),
-              disabled: !t.supported,
+                  .join(" · ") || i18n.t("player.track", { count: s.index })) +
+                (s.supported ? "" : i18n.t("player.subtitle_unsupported")),
+              disabled: !s.supported,
             })),
           ],
           value: subIndex === null ? "off" : String(subIndex),
@@ -346,7 +357,7 @@ function PlayerView({ id }: { id: string | undefined }) {
       durationHint={playback ? playback.duration_ms / 1000 : undefined}
       audio={audio}
       subtitles={subtitles}
-      methodLabel={playback ? METHOD_LABEL[playback.method] : null}
+      methodLabel={playback ? methodLabel(playback.method) : null}
       getInfo={getInfo}
       loading={!playback && !error}
       error={error}
