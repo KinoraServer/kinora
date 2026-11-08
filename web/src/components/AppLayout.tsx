@@ -59,12 +59,6 @@ export function AppLayout() {
           <NavLink to="/search" className={cn(navClass({ isActive: false }), "md:hidden")} aria-label={t("nav.search")}>
             <Search className="h-4 w-4" />
           </NavLink>
-          {isAdmin && (
-            <NavLink to="/admin" className={navClass} aria-label={t("nav.admin")}>
-              <Settings className="h-4 w-4" />
-              <span className="hidden lg:inline">{t("nav.admin")}</span>
-            </NavLink>
-          )}
           {user && <UserMenu user={user} isAdmin={isAdmin} onLogout={logout} />}
         </div>
       </header>
