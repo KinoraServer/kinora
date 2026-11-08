@@ -39,7 +39,8 @@ export const Home: Story = {
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(await c.findByRole("link", { name: /TV Shows/ })).toBeVisible();
-    await expect(await c.findByRole("link", { name: "Admin" })).toBeInTheDocument();
+    await userEvent.click(await c.findByRole("button", { name: "Account menu" }));
+    await expect(c.getByRole("link", { name: /Admin Settings/ })).toBeVisible();
   },
 };
 
