@@ -50,7 +50,13 @@ export default defineConfig({
       // Plain unit tests for lib/ and friends.
       {
         extends: true,
-        test: { name: "unit", environment: "jsdom", include: ["src/**/*.test.{ts,tsx}"] },
+        test: {
+          name: "unit",
+          environment: "jsdom",
+          include: ["src/**/*.test.{ts,tsx}"],
+          // Initializes i18next (English) so tests can assert translated text.
+          setupFiles: ["./src/i18n/test-setup.ts"],
+        },
       },
       // Every story is a test: it must render, its play function must pass,
       // and it must pass the a11y checks (see .storybook/preview.tsx).

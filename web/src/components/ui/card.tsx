@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 export function Card({ className, ...p }: HTMLAttributes<HTMLDivElement>) {
@@ -38,11 +39,12 @@ export function Badge({ className, ...p }: HTMLAttributes<HTMLSpanElement>) {
 }
 
 export function Spinner({ className }: { className?: string }) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn("h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary", className)}
       role="status"
-      aria-label="Loading"
+      aria-label={t("common.loading")}
     />
   );
 }

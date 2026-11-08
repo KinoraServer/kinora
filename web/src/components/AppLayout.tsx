@@ -2,12 +2,14 @@ import { Avatar } from "@/components/Avatar";
 import { Logo } from "@/components/Logo";
 import { Clapperboard, Home, LogOut, Search, Settings, Tv, UserCog } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import { useApi, useSession } from "@/lib/session";
 import type { Library, User } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function AppLayout() {
+  const { t } = useTranslation();
   const { user, isAdmin, logout, info } = useSession();
   const { data: libraries } = useApi<Library[]>("api/libraries");
   const navigate = useNavigate();
@@ -29,7 +31,7 @@ export function AppLayout() {
           </Link>
           <nav className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             <NavLink to="/" end className={navClass}>
-              <Home className="h-4 w-4" /> Home
+              <Home className="h-4 w-4" /> {t("nav.home")}
             </NavLink>
             {libraries?.map((lib) => (
               <NavLink key={lib.id} to={`/library/${lib.id}`} className={navClass}>
@@ -49,18 +51,18 @@ export function AppLayout() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search"
-              aria-label="Search"
+              placeholder={t("nav.search")}
+              aria-label={t("nav.search")}
               className="h-9 w-56 rounded-md border bg-card pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             />
           </form>
-          <NavLink to="/search" className={cn(navClass({ isActive: false }), "md:hidden")} aria-label="Search">
+          <NavLink to="/search" className={cn(navClass({ isActive: false }), "md:hidden")} aria-label={t("nav.search")}>
             <Search className="h-4 w-4" />
           </NavLink>
           {isAdmin && (
-            <NavLink to="/admin" className={navClass} aria-label="Admin">
+            <NavLink to="/admin" className={navClass} aria-label={t("nav.admin")}>
               <Settings className="h-4 w-4" />
-              <span className="hidden lg:inline">Admin</span>
+              <span className="hidden lg:inline">{t("nav.admin")}</span>
             </NavLink>
           )}
           {user && <UserMenu user={user} isAdmin={isAdmin} onLogout={logout} />}
@@ -74,6 +76,7 @@ export function AppLayout() {
 }
 
 export function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boolean; onLogout: () => void }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -95,7 +98,7 @@ export function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boo
       <button
         onClick={() => setOpen((o) => !o)}
         className="cursor-pointer rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        aria-label="Account menu"
+        aria-label={t("nav.account_menu")}
         aria-expanded={open}
       >
         <Avatar user={user} />
@@ -108,16 +111,16 @@ export function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boo
           </div>
           <div className="my-1 border-t" />
           <Link to="/settings" className={item} onClick={() => setOpen(false)}>
-            <UserCog className="h-4 w-4" /> User Settings
+            <UserCog className="h-4 w-4" /> {t("nav.user_settings")}
           </Link>
           {isAdmin && (
             <Link to="/admin" className={item} onClick={() => setOpen(false)}>
-              <Settings className="h-4 w-4" /> Admin Settings
+              <Settings className="h-4 w-4" /> {t("nav.admin_settings")}
             </Link>
           )}
           <div className="my-1 border-t" />
           <button onClick={onLogout} className={item}>
-            <LogOut className="h-4 w-4" /> Sign out
+            <LogOut className="h-4 w-4" /> {t("nav.sign_out")}
           </button>
         </div>
       )}

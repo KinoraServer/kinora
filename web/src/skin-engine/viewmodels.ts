@@ -4,6 +4,7 @@
 // Everything here is pure (and unit tested); the hooks below fetch the data.
 
 import { useMemo } from "react";
+import { i18n } from "@/i18n";
 import { avatarUrl } from "@/lib/api";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { useApi, useSession } from "@/lib/session";
@@ -62,7 +63,7 @@ export function toCard(it: AnyItem, now = Date.now()): CardVM {
         : it.year
           ? String(it.year)
           : it.kind === "series"
-            ? "Series"
+            ? i18n.t("item.series")
             : "",
     seriesTitle: it.series_title ?? "",
     episodeTitle: isEpisode ? it.title : "",
@@ -72,7 +73,10 @@ export function toCard(it: AnyItem, now = Date.now()): CardVM {
     officialRating: it.official_rating ?? "",
     runtimeLabel: formatDuration(duration),
     progress,
-    remainingLabel: inProgress && duration > position ? `${formatDuration(duration - position) || "1m"} left` : "",
+    remainingLabel:
+      inProgress && duration > position
+        ? i18n.t("item.time_left", { time: formatDuration(duration - position) || "1m" })
+        : "",
     played,
     inProgress,
     isNew: !!it.added_at && now - it.added_at < NEW_FOR_MS && !played && !inProgress,
@@ -160,11 +164,11 @@ export function buildApp(args: {
 }
 
 export const SORTS = [
-  { value: "title", label: "Title" },
-  { value: "added", label: "Recently added" },
-  { value: "year", label: "Year" },
-  { value: "rating", label: "Rating" },
-];
+  { value: "title", labelKey: "library.sort_title" },
+  { value: "added", labelKey: "library.sort_added" },
+  { value: "year", labelKey: "library.sort_year" },
+  { value: "rating", labelKey: "library.sort_rating" },
+] as const;
 
 export function buildLibrary(
   lib: Library | undefined,
@@ -178,13 +182,25 @@ export function buildLibrary(
     $type: "Library",
     library: lib
       ? toLibraryLink(lib, lib.id)
-      : ({ $type: "LibraryLink", id: "", name: "Library", kind: "", itemCount: 0, active: true } as LibraryLinkVM),
+      : ({
+          $type: "LibraryLink",
+          id: "",
+          name: i18n.t("library.title"),
+          kind: "",
+          itemCount: 0,
+          active: true,
+        } as LibraryLinkVM),
     items: list,
     count,
-    countLabel: items ? `${count} ${count === 1 ? "title" : "titles"}` : "",
+    countLabel: items ? i18n.t("library.count", { count }) : "",
     isEmpty: !!items && count === 0,
     isLoading: loading,
-    sort: SORTS.map((s) => ({ $type: "SortOption", ...s, active: s.value === sort })),
+    sort: SORTS.map((s) => ({
+      $type: "SortOption",
+      value: s.value,
+      label: i18n.t(s.labelKey),
+      active: s.value === sort,
+    })),
   } as LibraryVM;
 }
 
@@ -207,7 +223,9 @@ export function toFile(f: MediaFile): FileVM {
     audioLabel: audio
       .map((a) => [lang(a.language), a.codec.toUpperCase(), `${a.channels}ch`].filter(Boolean).join(" "))
       .join(", "),
-    subtitleLabel: subs.length ? `Subtitles: ${subs.map((s) => lang(s.language) || s.codec).join(", ")}` : "",
+    subtitleLabel: subs.length
+      ? i18n.t("item.subtitles_list", { list: subs.map((s) => lang(s.language) || s.codec).join(", ") })
+      : "",
     hdr,
   } as FileVM;
 }
@@ -253,13 +271,12 @@ export function buildItem(
   const playable = item.kind === "movie" || item.kind === "episode";
   const canResume = playable && card.inProgress;
   const playTarget = playable ? card : nextUp;
+  const nextCode = shortCode(item.next_up?.season_number, item.next_up?.episode_number);
   const playLabel = canResume
-    ? "Resume"
-    : playable
-      ? "Play"
-      : nextUp
-        ? `Play ${shortCode(item.next_up?.season_number, item.next_up?.episode_number)}`.trim()
-        : "Play";
+    ? i18n.t("item.resume")
+    : !playable && nextUp && nextCode
+      ? i18n.t("item.play_episode", { code: nextCode })
+      : i18n.t("item.play");
   return {
     ...card,
     $type: "Item",
@@ -277,8 +294,8 @@ export function buildItem(
     canPlay: !!playTarget,
     canResume,
     playLabel,
-    resumeLabel: canResume ? "Resume" : "",
-    playedLabel: item.played ? "Mark unwatched" : "Mark watched",
+    resumeLabel: canResume ? i18n.t("item.resume") : "",
+    playedLabel: item.played ? i18n.t("item.mark_unwatched") : i18n.t("item.mark_watched"),
   } as ItemVM;
 }
 
@@ -292,7 +309,7 @@ export function buildSearch(query: string, results: ItemCard[] | null, loading: 
     results: hasQuery ? list : [],
     isEmpty: hasQuery && !!results && list.length === 0 && !loading,
     isSearching: hasQuery && loading,
-    countLabel: hasQuery && results ? `${list.length} ${list.length === 1 ? "result" : "results"}` : "",
+    countLabel: hasQuery && results ? i18n.t("search.count", { count: list.length }) : "",
   } as SearchVM;
 }
 

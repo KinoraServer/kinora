@@ -1,3 +1,4 @@
+import { i18n } from "@/i18n";
 import type { PlaybackStart, SubtitleTrack } from "./types";
 
 const STORAGE_KEY = "kinora.subtitles";
@@ -51,8 +52,8 @@ export function startSubtitle(p: Pick<PlaybackStart, "subtitles" | "auto_tracks"
 /** Where the remembered tracks came from, for the info panel. */
 export function describeAutoTracks(p: Pick<PlaybackStart, "auto_tracks"> | null): string {
   const from = p?.auto_tracks?.from;
-  if (!from) return "no remembered choice";
-  return `your last choice for this ${from === "series" ? "show" : from}`;
+  if (!from) return i18n.t("player.tracks_none");
+  return i18n.t(`player.tracks_from_${from}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -105,5 +106,7 @@ export function saveSubtitleOffset(y: SubtitleOffset) {
 
 /** "Up 3%", "Down 1%" or "Default position". */
 export function describeSubtitleOffset(y: SubtitleOffset): string {
-  return y === 0 ? "Default position" : `${y > 0 ? "Up" : "Down"} ${Math.abs(y)}%`;
+  return y === 0
+    ? i18n.t("player.offset_default")
+    : i18n.t(y > 0 ? "player.offset_up" : "player.offset_down", { count: Math.abs(y) });
 }

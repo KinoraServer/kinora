@@ -57,6 +57,7 @@ import {
   useState,
 } from "react";
 import { useHotkeys } from "@tanstack/react-hotkeys";
+import { useTranslation } from "react-i18next";
 import {
   describeSubtitleOffset,
   NO_OFFSET,
@@ -67,6 +68,7 @@ import {
   saveSubtitleOffset,
 } from "@/lib/subtitles";
 import { Spinner } from "@/components/ui/card";
+import { i18n } from "@/i18n";
 import { formatClock } from "@/lib/format";
 import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
@@ -470,8 +472,9 @@ function IconBtn({
 }
 
 function PlayPause({ c, className, iconClass = "h-5 w-5" }: { c: Ctx; className?: string; iconClass?: string }) {
+  const { t } = useTranslation();
   return (
-    <IconBtn label={c.s.playing ? "Pause" : "Play"} onClick={c.a.toggle} className={className}>
+    <IconBtn label={c.s.playing ? t("player.pause") : t("player.play")} onClick={c.a.toggle} className={className}>
       {c.s.playing ? (
         <Pause className={iconClass} fill="currentColor" />
       ) : (
@@ -482,12 +485,13 @@ function PlayPause({ c, className, iconClass = "h-5 w-5" }: { c: Ctx; className?
 }
 
 function SkipButtons({ c, className, iconClass = "h-5 w-5" }: { c: Ctx; className?: string; iconClass?: string }) {
+  const { t } = useTranslation();
   return (
     <>
-      <IconBtn label="Back 10 seconds" onClick={() => c.a.skip(-10)} className={className}>
+      <IconBtn label={t("player.skip_back")} onClick={() => c.a.skip(-10)} className={className}>
         <RotateCcw className={iconClass} />
       </IconBtn>
-      <IconBtn label="Forward 10 seconds" onClick={() => c.a.skip(10)} className={className}>
+      <IconBtn label={t("player.skip_forward")} onClick={() => c.a.skip(10)} className={className}>
         <RotateCw className={iconClass} />
       </IconBtn>
     </>
@@ -495,8 +499,9 @@ function SkipButtons({ c, className, iconClass = "h-5 w-5" }: { c: Ctx; classNam
 }
 
 function BackButton({ c, className }: { c: Ctx; className?: string }) {
+  const { t } = useTranslation();
   return (
-    <IconBtn label="Back" onClick={c.props.onBack} className={className}>
+    <IconBtn label={t("common.back")} onClick={c.props.onBack} className={className}>
       <ArrowLeft className="h-5 w-5" />
     </IconBtn>
   );
@@ -524,6 +529,7 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
   const buffered = duration > 0 ? clamp(s.bufferedEnd / duration, 0, 1) : 0;
   // Arrow keys while the seek bar itself has focus (they stop here, so the
   // player-wide arrow shortcuts don't also fire).
+  const { t } = useTranslation();
   useHotkeys(
     [
       { hotkey: "ArrowLeft", callback: () => a.skip(-5) },
@@ -544,11 +550,11 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
       data-kn-bar
       role="slider"
       tabIndex={0}
-      aria-label="Seek"
+      aria-label={t("player.seek")}
       aria-valuemin={0}
       aria-valuemax={Math.floor(duration)}
       aria-valuenow={Math.floor(s.currentTime)}
-      aria-valuetext={`${formatClock(s.currentTime)} of ${formatClock(duration)}`}
+      aria-valuetext={t("player.time_of", { current: formatClock(s.currentTime), duration: formatClock(duration) })}
       className={cn(
         "group/seek pointer-events-auto relative flex h-5 w-full cursor-pointer touch-none items-center",
         className,
@@ -594,6 +600,7 @@ function Seek({ c, className }: { c: Ctx; className?: string }) {
 }
 
 function Volume({ c, slider = true }: { c: Ctx; slider?: boolean }) {
+  const { t } = useTranslation();
   const { s, a } = c;
   const ref = useRef<HTMLDivElement>(null);
   const set = (clientX: number) => {
@@ -610,7 +617,7 @@ function Volume({ c, slider = true }: { c: Ctx; slider?: boolean }) {
   );
   return (
     <div className="pointer-events-auto flex items-center">
-      <IconBtn label={s.muted ? "Unmute" : "Mute"} onClick={a.toggleMute}>
+      <IconBtn label={s.muted ? t("player.unmute") : t("player.mute")} onClick={a.toggleMute}>
         {s.muted || s.volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
       </IconBtn>
       {slider && (
@@ -618,7 +625,7 @@ function Volume({ c, slider = true }: { c: Ctx; slider?: boolean }) {
           ref={ref}
           role="slider"
           tabIndex={0}
-          aria-label="Volume"
+          aria-label={t("player.volume")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(level * 100)}
@@ -702,9 +709,9 @@ function MenuButton({
   );
 }
 
-function speedChoice(c: Ctx): PlayerChoice {
+function speedChoice(c: Ctx, t: ReturnType<typeof useTranslation>["t"]): PlayerChoice {
   return {
-    options: SPEEDS.map((r) => ({ value: String(r), label: r === 1 ? "Normal" : `${r}×` })),
+    options: SPEEDS.map((r) => ({ value: String(r), label: r === 1 ? t("player.speed_normal") : `${r}×` })),
     value: String(c.s.rate),
     onChange: (v) => c.a.setRate(Number(v)),
   };
@@ -712,6 +719,7 @@ function speedChoice(c: Ctx): PlayerChoice {
 
 /** Audio, subtitles, speed, info, picture-in-picture, fullscreen: the same set in every layout. */
 function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
+  const { t } = useTranslation();
   const { props, s, a } = c;
   const audioLabel = props.audio?.options.find((o) => o.value === props.audio?.value)?.label;
   const subLabel = props.subtitles?.options.find((o) => o.value === props.subtitles?.value)?.label;
@@ -721,28 +729,28 @@ function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
         <MenuButton
           c={c}
           id="audio"
-          label="Audio track"
-          title="Audio"
+          label={t("player.audio_track")}
+          title={t("player.audio")}
           icon={<AudioLines className="h-5 w-5" />}
           choice={props.audio}
-          text={labelled ? (audioLabel?.split(" · ")[0] ?? "Audio") : undefined}
+          text={labelled ? (audioLabel?.split(" · ")[0] ?? t("player.audio")) : undefined}
         />
       )}
       {props.subtitles && props.subtitles.options.length > 1 && (
         <MenuButton
           c={c}
           id="subtitles"
-          label="Subtitles"
-          title="Subtitles"
+          label={t("player.subtitles")}
+          title={t("player.subtitles")}
           icon={<Captions className="h-5 w-5" />}
           choice={props.subtitles}
-          text={labelled ? (subLabel?.split(" · ")[0] ?? "Subtitles") : undefined}
+          text={labelled ? (subLabel?.split(" · ")[0] ?? t("player.subtitles")) : undefined}
         />
       )}
       {props.subtitles && props.subtitles.options.length > 1 && (
         <div data-menu className="pointer-events-auto">
           <IconBtn
-            label="Subtitle position"
+            label={t("player.subtitle_position")}
             onClick={a.toggleSubtitlePanel}
             active={s.openMenu === SUBTITLE_PANEL}
             className={labelled ? "h-9 w-9" : "h-10 w-10"}
@@ -754,21 +762,21 @@ function RightControls({ c, labelled }: { c: Ctx; labelled?: boolean }) {
       <MenuButton
         c={c}
         id="speed"
-        label="Playback speed"
-        title="Speed"
+        label={t("player.speed")}
+        title={t("player.speed_title")}
         icon={<Gauge className="h-5 w-5" />}
-        choice={speedChoice(c)}
+        choice={speedChoice(c, t)}
         text={labelled ? `${s.rate}×` : undefined}
       />
-      <IconBtn label="Playback info" onClick={a.toggleInfo} active={s.infoOpen}>
+      <IconBtn label={t("player.info_panel")} onClick={a.toggleInfo} active={s.infoOpen}>
         <Info className="h-5 w-5" />
       </IconBtn>
       {canPip() && (
-        <IconBtn label="Picture in picture" onClick={a.togglePip} active={s.pip}>
+        <IconBtn label={t("player.pip")} onClick={a.togglePip} active={s.pip}>
           <PictureInPicture2 className="h-5 w-5" />
         </IconBtn>
       )}
-      <IconBtn label={s.fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={a.toggleFullscreen}>
+      <IconBtn label={s.fullscreen ? t("player.exit_fullscreen") : t("player.fullscreen")} onClick={a.toggleFullscreen}>
         {s.fullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
       </IconBtn>
     </>
@@ -788,17 +796,21 @@ const INFO_ICONS: Record<InfoIcon, typeof Film> = {
 };
 
 /** What the panel can say with no help from the page. */
-function fallbackInfo(v: HTMLVideoElement | null, s: PlayerState): PlayerInfo {
+function fallbackInfo(
+  v: HTMLVideoElement | null,
+  s: PlayerState,
+  t: ReturnType<typeof useTranslation>["t"],
+): PlayerInfo {
   const q = v?.getVideoPlaybackQuality?.();
   return {
     basic: [
       {
-        title: "Playback",
+        title: t("player.info.playback"),
         icon: "video",
         rows: [
-          ["Resolution", v?.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : "–"],
-          ["Buffered ahead", `${Math.max(0, Math.round(s.bufferedEnd - s.currentTime))} s`],
-          ["Dropped frames", String(q?.droppedVideoFrames ?? 0)],
+          [t("player.info.resolution"), v?.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : "–"],
+          [t("player.info.buffered_ahead"), `${Math.max(0, Math.round(s.bufferedEnd - s.currentTime))} s`],
+          [t("player.info.dropped_frames"), String(q?.droppedVideoFrames ?? 0)],
         ],
       },
     ],
@@ -843,13 +855,16 @@ function InfoSectionView({ section, dense }: { section: InfoSection; dense?: boo
  * most people want; "Trace" is everything we know, for chasing a problem.
  */
 function InfoPanel({ c }: { c: Ctx }) {
+  const { t } = useTranslation();
+  const tRef = useRef(t);
+  tRef.current = t;
   const [tab, setTab] = useState<"basic" | "trace">("basic");
   const [copied, setCopied] = useState(false);
   const latest = useRef(c);
   latest.current = c;
   const read = useCallback(() => {
     const { props, s } = latest.current;
-    return props.getInfo?.() ?? fallbackInfo(props.videoRef.current, s);
+    return props.getInfo?.() ?? fallbackInfo(props.videoRef.current, s, tRef.current);
   }, []);
   const [info, setInfo] = useState<PlayerInfo>(read);
   useEffect(() => {
@@ -885,15 +900,15 @@ function InfoPanel({ c }: { c: Ctx }) {
   return (
     <div
       role="dialog"
-      aria-label="Playback info"
+      aria-label={t("player.info_panel")}
       className="pointer-events-auto absolute top-20 left-4 z-10 flex max-h-[calc(100%-12rem)] w-[min(60rem,calc(100%-2rem))] flex-col rounded-xl bg-black/80 text-sm text-white shadow-2xl"
       style={{ backdropFilter: "blur(var(--kn-player-bar-blur))" }}
     >
       <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
         {info.trace.length > 0 && (
           <div role="tablist" className="flex gap-1 rounded-lg bg-white/5 p-0.5">
-            {tabBtn("basic", "Overview")}
-            {tabBtn("trace", "Trace")}
+            {tabBtn("basic", t("player.info_overview"))}
+            {tabBtn("trace", t("player.info_trace"))}
           </div>
         )}
         <span className="flex-1" />
@@ -904,12 +919,12 @@ function InfoPanel({ c }: { c: Ctx }) {
             className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-white/70 hover:bg-white/10 hover:text-white"
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? "Copied" : "Copy all"}
+            {copied ? t("player.copied") : t("player.copy_all")}
           </button>
         )}
         <button
           type="button"
-          aria-label="Close playback info"
+          aria-label={t("player.close_info")}
           onClick={c.a.toggleInfo}
           className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full hover:bg-white/15"
         >
@@ -969,6 +984,7 @@ function MinimalLayout({ c }: { c: Ctx }) {
 }
 
 function CinematicLayout({ c }: { c: Ctx }) {
+  const { t } = useTranslation();
   return (
     <>
       <div className={cn("absolute inset-x-0 top-0 flex items-start gap-4 p-6 sm:p-8", topGradient)}>
@@ -978,12 +994,12 @@ function CinematicLayout({ c }: { c: Ctx }) {
         </p>
       </div>
       <div className="absolute inset-0 flex items-center justify-center gap-6 sm:gap-12">
-        <IconBtn label="Back 10 seconds" onClick={() => c.a.skip(-10)} className="h-14 w-14 bg-black/30">
+        <IconBtn label={t("player.skip_back")} onClick={() => c.a.skip(-10)} className="h-14 w-14 bg-black/30">
           <RotateCcw className="h-7 w-7" />
         </IconBtn>
         <button
           type="button"
-          aria-label={c.s.playing ? "Pause" : "Play"}
+          aria-label={c.s.playing ? t("player.pause") : t("player.play")}
           onClick={c.a.toggle}
           className="pointer-events-auto flex h-20 w-20 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform hover:scale-105 sm:h-24 sm:w-24"
         >
@@ -993,7 +1009,7 @@ function CinematicLayout({ c }: { c: Ctx }) {
             <Play className="ml-1 h-9 w-9" fill="currentColor" />
           )}
         </button>
-        <IconBtn label="Forward 10 seconds" onClick={() => c.a.skip(10)} className="h-14 w-14 bg-black/30">
+        <IconBtn label={t("player.skip_forward")} onClick={() => c.a.skip(10)} className="h-14 w-14 bg-black/30">
           <RotateCw className="h-7 w-7" />
         </IconBtn>
       </div>
@@ -1044,7 +1060,10 @@ function FloatingLayout({ c }: { c: Ctx }) {
 
 function ProLayout({ c }: { c: Ctx }) {
   const remaining = Math.max(0, c.s.duration - c.s.currentTime) / c.s.rate;
-  const endsAt = new Date(Date.now() + remaining * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const endsAt = new Date(Date.now() + remaining * 1000).toLocaleTimeString(i18n.language, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
   return (
     <>
       <div
@@ -1176,6 +1195,7 @@ function CueText({ cue }: { cue: TextTrackCue }) {
 }
 
 function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[]; barHeight: number }) {
+  const { t } = useTranslation();
   const { subtitleOffset: o, controlsVisible, openMenu } = c.s;
   const positioning = openMenu === SUBTITLE_PANEL;
   if (cues.length === 0 && !positioning) return null;
@@ -1205,7 +1225,7 @@ function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[];
         ))
       ) : (
         <p className="rounded-md border border-dashed border-white/60 bg-black/60 px-[0.4em] py-[0.1em] text-white/90">
-          Subtitles appear here
+          {t("player.subtitles_here")}
         </p>
       )}
     </div>
@@ -1214,6 +1234,7 @@ function SubtitleOverlay({ c, cues, barHeight }: { c: Ctx; cues: TextTrackCue[];
 
 /** Up/down buttons: nudge the subtitles a step at a time, or put them back. */
 function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
+  const { t } = useTranslation();
   const { s, a } = c;
   const o = s.subtitleOffset;
   const btn =
@@ -1226,15 +1247,15 @@ function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
     <div
       data-menu
       role="group"
-      aria-label="Subtitle position"
+      aria-label={t("player.subtitle_position")}
       className="pointer-events-auto absolute right-4 z-20 w-56 rounded-xl border border-white/10 bg-black/85 p-4 text-sm text-white shadow-2xl"
       style={{ bottom: barHeight + BAR_GAP, backdropFilter: "blur(var(--kn-player-bar-blur))" }}
     >
       <div className="mb-3 flex items-center justify-between">
-        <p className="font-medium">Subtitle position</p>
+        <p className="font-medium">{t("player.subtitle_position")}</p>
         <button
           type="button"
-          aria-label="Close"
+          aria-label={t("common.close")}
           onClick={() => a.setOpenMenu(null)}
           className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full hover:bg-white/15"
         >
@@ -1242,29 +1263,27 @@ function SubtitlePanel({ c, barHeight }: { c: Ctx; barHeight: number }) {
         </button>
       </div>
       <div className="mx-auto flex w-max flex-col items-center gap-1.5">
-        <button type="button" aria-label="Move subtitles up" className={btn} onClick={step(1)}>
+        <button type="button" aria-label={t("player.move_subtitles_up")} className={btn} onClick={step(1)}>
           <ChevronUp className="h-5 w-5" />
         </button>
         <button
           type="button"
-          aria-label="Reset subtitle position"
-          title="Reset"
+          aria-label={t("player.reset_subtitles")}
+          title={t("player.reset")}
           className={cn(btn, "bg-primary/25 hover:bg-primary/40")}
           onClick={a.resetSubtitles}
           disabled={o === 0}
         >
           <RotateCcw className="h-4 w-4" />
         </button>
-        <button type="button" aria-label="Move subtitles down" className={btn} onClick={step(-1)}>
+        <button type="button" aria-label={t("player.move_subtitles_down")} className={btn} onClick={step(-1)}>
           <ChevronDown className="h-5 w-5" />
         </button>
       </div>
       <p className="mt-3 text-center tabular-nums text-white/80" aria-live="polite">
         {describeSubtitleOffset(o)}
       </p>
-      <p className="mt-1 text-center text-xs text-white/50">
-        The up and down arrow keys move them too. Saved on this device.
-      </p>
+      <p className="mt-1 text-center text-xs text-white/50">{t("player.subtitles_hint")}</p>
     </div>
   );
 }
@@ -1399,6 +1418,7 @@ function fillSelect(sel: HTMLSelectElement, choice: PlayerChoice | undefined) {
 }
 
 function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
+  const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const html = useMemo(() => sanitizeSkinHtml(skin.html), [skin.html]);
   const css = useMemo(() => scopeSkinCss(skin.id, skin.css), [skin.id, skin.css]);
@@ -1457,7 +1477,7 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
       const sel = (e.target as HTMLElement).closest<HTMLSelectElement>("select[data-kn-select]");
       if (!sel) return;
       const { props } = latest.current;
-      const speed: PlayerChoice = speedChoice(latest.current);
+      const speed: PlayerChoice = speedChoice(latest.current, t);
       const map: Record<string, PlayerChoice | undefined> = {
         audio: props.audio,
         subtitles: props.subtitles,
@@ -1525,7 +1545,7 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
           : kind === "subtitles"
             ? props.subtitles
             : kind === "speed"
-              ? speedChoice(c)
+              ? speedChoice(c, t)
               : undefined,
       );
     }
@@ -1555,6 +1575,7 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
 // ---------------------------------------------------------------------------
 
 export function MediaPlayer(props: MediaPlayerProps) {
+  const { t } = useTranslation();
   const { videoRef, children, loading, error } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const { state: s, actions: a } = usePlayerController(videoRef, rootRef, props.durationHint ?? 0);
@@ -1610,14 +1631,14 @@ export function MediaPlayer(props: MediaPlayerProps) {
       )}
       {error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 p-6 text-center">
-          <p className="text-lg font-medium">Couldn't play this</p>
+          <p className="text-lg font-medium">{t("player.couldnt_play")}</p>
           <p className="text-white/70">{error}</p>
           <button
             type="button"
             onClick={props.onBack}
             className="mt-2 cursor-pointer rounded-md bg-white/10 px-4 py-2 text-sm hover:bg-white/20"
           >
-            Go back
+            {t("player.go_back")}
           </button>
         </div>
       )}

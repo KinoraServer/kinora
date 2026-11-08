@@ -1,5 +1,6 @@
 import { Logo } from "@/components/Logo";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, ErrorNote } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
 }
 
 function CredentialsForm({ endpoint, button, minLength }: { endpoint: string; button: string; minLength?: number }) {
+  const { t } = useTranslation();
   const { refresh } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -44,7 +46,7 @@ function CredentialsForm({ endpoint, button, minLength }: { endpoint: string; bu
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field label="Username">
+      <Field label={t("auth.username")}>
         <Input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -53,7 +55,10 @@ function CredentialsForm({ endpoint, button, minLength }: { endpoint: string; bu
           autoFocus
         />
       </Field>
-      <Field label="Password" help={minLength ? `At least ${minLength} characters.` : undefined}>
+      <Field
+        label={t("auth.password")}
+        help={minLength ? t("auth.password_min_length", { count: minLength }) : undefined}
+      >
         <Input
           type="password"
           value={password}
@@ -65,28 +70,27 @@ function CredentialsForm({ endpoint, button, minLength }: { endpoint: string; bu
       </Field>
       <ErrorNote message={error} />
       <Button type="submit" className="w-full" disabled={busy}>
-        {busy ? "Please wait..." : button}
+        {busy ? t("auth.waiting") : button}
       </Button>
     </form>
   );
 }
 
 export function SetupPage() {
+  const { t } = useTranslation();
   return (
-    <AuthShell
-      title="Welcome to Kinora"
-      subtitle="Create the owner account for this server. You can add more people later."
-    >
-      <CredentialsForm endpoint="api/setup" button="Create account" minLength={8} />
+    <AuthShell title={t("auth.setup_title")} subtitle={t("auth.setup_subtitle")}>
+      <CredentialsForm endpoint="api/setup" button={t("auth.create_account")} minLength={8} />
     </AuthShell>
   );
 }
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const { info } = useSession();
   return (
-    <AuthShell title={info?.server_name ?? "Kinora"} subtitle="Sign in to continue">
-      <CredentialsForm endpoint="api/auth/login" button="Sign in" />
+    <AuthShell title={info?.server_name ?? "Kinora"} subtitle={t("auth.login_subtitle")}>
+      <CredentialsForm endpoint="api/auth/login" button={t("auth.sign_in")} />
     </AuthShell>
   );
 }

@@ -7,6 +7,8 @@
 //   data-kn-carousel-dots     filled with one button per slide
 //   root data-scrolled        "true" once the page has scrolled a little
 
+import { i18n } from "@/i18n";
+
 const railMemory = new Map<string, number>();
 
 function railKey(rail: HTMLElement): string | null {
@@ -78,7 +80,7 @@ function showSlide(carousel: HTMLElement, state: CarouselState, index: number) {
         ...slides.map((_, i) => {
           const b = document.createElement("button");
           b.type = "button";
-          b.setAttribute("aria-label", `Show item ${i + 1} of ${slides.length}`);
+          b.setAttribute("aria-label", i18n.t("skins.carousel_dot", { index: i + 1, total: slides.length }));
           b.addEventListener("click", () => {
             const st = carousels.get(carousel);
             if (st) showSlide(carousel, st, i);

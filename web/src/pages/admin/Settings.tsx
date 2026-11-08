@@ -1,5 +1,6 @@
 import { Cpu, RefreshCw } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Spinner } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -23,15 +24,23 @@ interface Hardware {
   detected_at: number | null;
 }
 
-const ACCEL_LABEL: Record<string, string> = {
-  none: "Software (CPU)",
-  nvenc: "NVIDIA NVENC",
-  qsv: "Intel Quick Sync",
-  vaapi: "VAAPI (Intel / AMD)",
-  video_toolbox: "Apple VideoToolbox",
+const ACCEL_LABEL: Record<
+  string,
+  | "admin.settings.accel_label_none"
+  | "admin.settings.accel_label_nvenc"
+  | "admin.settings.accel_label_qsv"
+  | "admin.settings.accel_label_vaapi"
+  | "admin.settings.accel_label_video_toolbox"
+> = {
+  none: "admin.settings.accel_label_none",
+  nvenc: "admin.settings.accel_label_nvenc",
+  qsv: "admin.settings.accel_label_qsv",
+  vaapi: "admin.settings.accel_label_vaapi",
+  video_toolbox: "admin.settings.accel_label_video_toolbox",
 };
 
 export function SettingsPage() {
+  const { t } = useTranslation();
   const { data, error } = useApi<Settings>("api/system/settings");
   const hardware = useApi<Hardware>("api/system/hardware");
   const { themes, reload: reloadThemes } = useTheme();
@@ -49,7 +58,7 @@ export function SettingsPage() {
     setSaveError(null);
     try {
       await api.put("api/system/settings", form);
-      setSaved("Saved.");
+      setSaved(t("common.saved"));
       reloadThemes();
       setTimeout(() => setSaved(null), 2000);
       if (data && data.hw_accel !== form.hw_accel) setTimeout(hardware.reload, 4000);
@@ -66,33 +75,33 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="General" />
+        <CardHeader title={t("admin.settings.general")} />
         <ErrorNote message={error} />
         {form && (
           <form onSubmit={save} className="grid gap-4 p-5 sm:grid-cols-2">
-            <Field label="Server name">
+            <Field label={t("admin.settings.server_name")}>
               <Input value={form.server_name} onChange={(e) => setForm({ ...form, server_name: e.target.value })} />
             </Field>
-            <Field label="Default theme" help="Used by every browser that hasn't picked its own theme.">
+            <Field label={t("admin.settings.default_theme")} help={t("admin.settings.default_theme_help")}>
               <Select value={form.default_theme} onChange={(e) => setForm({ ...form, default_theme: e.target.value })}>
-                {themes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
+                {themes.map((th) => (
+                  <option key={th.id} value={th.id}>
+                    {th.name}
                   </option>
                 ))}
               </Select>
             </Field>
-            <Field label="Hardware acceleration" help="Auto tries each GPU backend and uses the first one that works.">
+            <Field label={t("admin.settings.hw_accel")} help={t("admin.settings.hw_accel_help")}>
               <Select value={form.hw_accel} onChange={(e) => setForm({ ...form, hw_accel: e.target.value })}>
-                <option value="auto">Auto-detect</option>
-                <option value="nvenc">NVIDIA NVENC</option>
-                <option value="qsv">Intel Quick Sync</option>
-                <option value="vaapi">VAAPI (Intel / AMD on Linux)</option>
-                <option value="videotoolbox">Apple VideoToolbox</option>
-                <option value="none">Off (CPU only)</option>
+                <option value="auto">{t("admin.settings.accel_auto")}</option>
+                <option value="nvenc">{t("admin.settings.accel_nvenc")}</option>
+                <option value="qsv">{t("admin.settings.accel_qsv")}</option>
+                <option value="vaapi">{t("admin.settings.accel_vaapi")}</option>
+                <option value="videotoolbox">{t("admin.settings.accel_videotoolbox")}</option>
+                <option value="none">{t("admin.settings.accel_none")}</option>
               </Select>
             </Field>
-            <Field label="Scan libraries every (minutes)" help="0 turns automatic scans off.">
+            <Field label={t("admin.settings.scan_interval")} help={t("admin.settings.scan_interval_help")}>
               <Input
                 type="number"
                 min={0}
@@ -101,7 +110,7 @@ export function SettingsPage() {
               />
             </Field>
             <div className="flex items-center gap-3 sm:col-span-2">
-              <Button type="submit">Save</Button>
+              <Button type="submit">{t("common.save")}</Button>
               {saved && <span className="text-sm text-muted-foreground">{saved}</span>}
               <ErrorNote message={saveError} />
             </div>
@@ -111,11 +120,11 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader
-          title="Hardware transcoding"
-          description="What Kinora found on this machine."
+          title={t("admin.settings.hw_title")}
+          description={t("admin.settings.hw_help")}
           action={
             <Button variant="secondary" size="sm" onClick={redetect}>
-              <RefreshCw className="h-4 w-4" /> Detect again
+              <RefreshCw className="h-4 w-4" /> {t("admin.settings.detect")}
             </Button>
           }
         />
@@ -126,14 +135,19 @@ export function SettingsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Cpu className="h-5 w-5 text-primary" />
                 <span className="font-medium">
-                  {ACCEL_LABEL[hardware.data.profile.accel.kind] ?? hardware.data.profile.accel.kind}
+                  {ACCEL_LABEL[hardware.data.profile.accel.kind]
+                    ? t(ACCEL_LABEL[hardware.data.profile.accel.kind])
+                    : hardware.data.profile.accel.kind}
                 </span>
                 {hardware.data.profile.accel.device && <Badge>{hardware.data.profile.accel.device}</Badge>}
-                <Badge>Tone mapping: {hardware.data.profile.tonemapper}</Badge>
+                <Badge>{t("admin.settings.tone_mapping", { value: hardware.data.profile.tonemapper })}</Badge>
               </div>
-              {!hardware.data.ffmpeg_found && <ErrorNote message="ffmpeg was not found, so only direct play works." />}
+              {!hardware.data.ffmpeg_found && <ErrorNote message={t("admin.settings.ffmpeg_missing")} />}
               <p className="text-muted-foreground">
-                {hardware.data.ffmpeg_version} · checked {formatDate(hardware.data.detected_at)}
+                {t("admin.settings.checked", {
+                  version: hardware.data.ffmpeg_version,
+                  when: formatDate(hardware.data.detected_at),
+                })}
               </p>
               <ul className="space-y-1">
                 {hardware.data.tests.map((t) => (

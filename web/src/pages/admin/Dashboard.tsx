@@ -1,5 +1,7 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge, Card, CardHeader, Empty } from "@/components/ui/card";
+import { i18n } from "@/i18n";
 import { formatDate } from "@/lib/format";
 import { useApi } from "@/lib/session";
 
@@ -23,25 +25,27 @@ interface Activity {
 
 function describe(a: Activity): string {
   const p = JSON.parse(a.payload);
+  const user = a.username ?? i18n.t("admin.dashboard.someone");
   switch (a.event) {
     case "playback_started":
-      return `${a.username ?? "Someone"} started playing (${p.method})`;
+      return i18n.t("admin.dashboard.playback_started", { user, method: p.method });
     case "playback_stopped":
-      return `${a.username ?? "Someone"} stopped playing`;
+      return i18n.t("admin.dashboard.playback_stopped", { user });
     case "item_added":
-      return `Added "${p.title}"`;
+      return i18n.t("admin.dashboard.item_added", { title: p.title });
     case "library_scan_started":
-      return "Library scan started";
+      return i18n.t("admin.dashboard.scan_started");
     case "library_scan_finished":
-      return `Library scan finished: ${p.added} added, ${p.removed} removed`;
+      return i18n.t("admin.dashboard.scan_finished", { added: p.added, removed: p.removed });
     case "user_created":
-      return `New user ${p.username}`;
+      return i18n.t("admin.dashboard.user_created", { username: p.username });
     default:
       return a.event;
   }
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const sessions = useApi<Session[]>("api/sessions");
   const activity = useApi<Activity[]>("api/system/activity");
 
@@ -56,14 +60,11 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader
-          title="Active streams"
-          description="Direct play streams don't use the transcoder and aren't listed here."
-        />
+        <CardHeader title={t("admin.dashboard.streams")} description={t("admin.dashboard.streams_help")} />
         <div className="divide-y">
           {sessions.data?.length === 0 && (
             <div className="p-5">
-              <Empty title="Nothing is transcoding right now" />
+              <Empty title={t("admin.dashboard.streams_empty")} />
             </div>
           )}
           {sessions.data?.map((s) => (
@@ -71,7 +72,8 @@ export function DashboardPage() {
               <div>
                 <p className="font-medium">{s.title}</p>
                 <p className="text-muted-foreground">
-                  {s.username} · {Math.round(s.running_seconds / 60)} min · {s.plan.reasons[0] ?? ""}
+                  {s.username} · {t("admin.dashboard.running_min", { count: Math.round(s.running_seconds / 60) })} ·{" "}
+                  {s.plan.reasons[0] ?? ""}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -83,9 +85,11 @@ export function DashboardPage() {
         </div>
       </Card>
       <Card>
-        <CardHeader title="Recent activity" />
+        <CardHeader title={t("admin.dashboard.activity")} />
         <div className="divide-y text-sm">
-          {activity.data?.length === 0 && <p className="p-5 text-muted-foreground">No activity yet.</p>}
+          {activity.data?.length === 0 && (
+            <p className="p-5 text-muted-foreground">{t("admin.dashboard.activity_empty")}</p>
+          )}
           {activity.data?.map((a) => (
             <div key={a.id} className="flex justify-between gap-4 px-5 py-3">
               <span>{describe(a)}</span>

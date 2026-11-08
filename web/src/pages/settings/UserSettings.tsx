@@ -4,6 +4,7 @@
 
 import { AudioLines, Captions, ChevronLeft, ChevronRight, MonitorCog, User, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, Navigate, useParams } from "react-router";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,19 @@ import { useApi, useSession } from "@/lib/session";
 import type { User as UserType } from "@/lib/types";
 import { useSkin } from "@/skin-engine/SkinProvider";
 
+type SectionLabelKey =
+  | "settings.sections.profile.label"
+  | "settings.sections.display.label"
+  | "settings.sections.audio.label"
+  | "settings.sections.subtitles.label";
+
+type SectionDescriptionKey =
+  "settings.sections.profile.description" | "settings.sections.display.description" | "settings.coming_soon";
+
 interface Section {
   id: string;
-  label: string;
-  description: string;
+  labelKey: SectionLabelKey;
+  descriptionKey: SectionDescriptionKey;
   icon: LucideIcon;
   page?: () => ReactNode;
 }
@@ -26,24 +36,30 @@ interface Section {
 export const SECTIONS: Section[] = [
   {
     id: "profile",
-    label: "Profile",
-    description: "Picture, name and password",
+    labelKey: "settings.sections.profile.label",
+    descriptionKey: "settings.sections.profile.description",
     icon: User,
     page: () => <ProfileSettings />,
   },
   {
     id: "display",
-    label: "Display",
-    description: "App skin",
+    labelKey: "settings.sections.display.label",
+    descriptionKey: "settings.sections.display.description",
     icon: MonitorCog,
     page: () => <DisplaySettings />,
   },
-  { id: "audio", label: "Audio", description: "Coming soon", icon: AudioLines },
-  { id: "subtitles", label: "Subtitles", description: "Coming soon", icon: Captions },
+  { id: "audio", labelKey: "settings.sections.audio.label", descriptionKey: "settings.coming_soon", icon: AudioLines },
+  {
+    id: "subtitles",
+    labelKey: "settings.sections.subtitles.label",
+    descriptionKey: "settings.coming_soon",
+    icon: Captions,
+  },
 ];
 
 /** /settings: the list of sections. */
 export function UserSettingsPage() {
+  const { t } = useTranslation();
   const { user } = useSession();
   if (!user) return null;
   return (
@@ -52,7 +68,7 @@ export function UserSettingsPage() {
         <Avatar user={user} className="h-10 w-10" />
         <h1 className="text-2xl font-semibold">{user.username}</h1>
       </div>
-      <nav aria-label="Settings sections" className="space-y-0.5">
+      <nav aria-label={t("settings.sections_aria")} className="space-y-0.5">
         {SECTIONS.map((s) => (
           <Link
             key={s.id}
@@ -61,8 +77,8 @@ export function UserSettingsPage() {
           >
             <s.icon className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden />
             <span className="flex-1">
-              <span className="block font-medium">{s.label}</span>
-              <span className="block text-xs text-muted-foreground">{s.description}</span>
+              <span className="block font-medium">{t(s.labelKey)}</span>
+              <span className="block text-xs text-muted-foreground">{t(s.descriptionKey)}</span>
             </span>
             <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
           </Link>
@@ -74,9 +90,11 @@ export function UserSettingsPage() {
 
 /** /settings/:section */
 export function UserSettingsSectionPage() {
+  const { t } = useTranslation();
   const { section } = useParams();
   const s = SECTIONS.find((x) => x.id === section);
   if (!s) return <Navigate to="/settings" replace />;
+  const label = t(s.labelKey);
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
@@ -84,22 +102,23 @@ export function UserSettingsSectionPage() {
           to="/settings"
           className="-ml-1 inline-flex cursor-pointer items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ChevronLeft className="h-4 w-4" /> Settings
+          <ChevronLeft className="h-4 w-4" /> {t("settings.back")}
         </Link>
         <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
-          <s.icon className="h-6 w-6 text-muted-foreground" aria-hidden /> {s.label}
+          <s.icon className="h-6 w-6 text-muted-foreground" aria-hidden /> {label}
         </h1>
       </div>
-      {s.page ? s.page() : <ComingSoon label={s.label} />}
+      {s.page ? s.page() : <ComingSoon label={label} />}
     </div>
   );
 }
 
 function ComingSoon({ label }: { label: string }) {
+  const { t } = useTranslation();
   return (
     <Card className="p-8 text-center">
-      <p className="font-medium">{label} settings are coming</p>
-      <p className="mt-1 text-sm text-muted-foreground">Nothing to change here yet.</p>
+      <p className="font-medium">{t("settings.coming_soon_title", { label })}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{t("settings.coming_soon_body")}</p>
     </Card>
   );
 }
@@ -113,11 +132,12 @@ interface MySkin {
 
 /** Display: which app skin to use (when the server allows picking) and safe mode for this browser. */
 export function DisplaySettings() {
+  const { t } = useTranslation();
   const { data, setData, error } = useApi<MySkin>("api/me/app-skin");
   const skin = useSkin();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, flash] = useSavedFlash();
-  const serverName = data?.choices.find((c) => c.id === data.server)?.name ?? "the standard look";
+  const serverName = data?.choices.find((c) => c.id === data.server)?.name ?? t("settings.display.the_standard_look");
 
   const pick = async (value: string | null) => {
     setSaveError(null);
@@ -154,15 +174,15 @@ export function DisplaySettings() {
     <div className="space-y-6">
       {data?.allowed && (
         <Card>
-          <CardHeader title="App skin" description="How the app looks for you, on every device you sign in on." />
-          <div className="space-y-1 p-3" role="radiogroup" aria-label="App skin">
-            {option(null, `Same as the server (${serverName})`)}
-            {option("none", "Kinora's standard look")}
+          <CardHeader title={t("settings.display.app_skin_title")} description={t("settings.display.app_skin_help")} />
+          <div className="space-y-1 p-3" role="radiogroup" aria-label={t("settings.display.app_skin_title")}>
+            {option(null, t("settings.display.same_as_server", { name: serverName }))}
+            {option("none", t("skins.standard_look"))}
             {data.choices.map((c) => option(c.id, c.name, c.description))}
           </div>
           <div className="px-5 pb-4">
             <ErrorNote message={saveError} />
-            {saved && <p className="text-sm text-muted-foreground">Saved.</p>}
+            {saved && <p className="text-sm text-muted-foreground">{t("common.saved")}</p>}
           </div>
         </Card>
       )}
@@ -170,12 +190,10 @@ export function DisplaySettings() {
       <Card>
         <div className="flex items-center justify-between gap-4 p-5">
           <div>
-            <p className="font-medium">Turn off skins in this browser</p>
-            <p className="text-sm text-muted-foreground">
-              Always use Kinora's standard look here, whatever skin is chosen. Only affects this browser.
-            </p>
+            <p className="font-medium">{t("skins.safe_mode")}</p>
+            <p className="text-sm text-muted-foreground">{t("settings.display.safe_mode_help")}</p>
           </div>
-          <Switch label="Turn off skins in this browser" checked={skin.safeMode} onChange={skin.setSafeMode} />
+          <Switch label={t("skins.safe_mode")} checked={skin.safeMode} onChange={skin.setSafeMode} />
         </div>
       </Card>
     </div>
@@ -206,6 +224,7 @@ export function ProfileSettings() {
 }
 
 function PictureCard() {
+  const { t } = useTranslation();
   const { user, setUser } = useSession();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -240,7 +259,7 @@ function PictureCard() {
 
   return (
     <Card>
-      <CardHeader title="Profile picture" description="Shown in the top bar. Square pictures look best." />
+      <CardHeader title={t("settings.picture.title")} description={t("settings.picture.help")} />
       <div className="flex flex-wrap items-center gap-4 p-5">
         <Avatar user={user} className="h-20 w-20 text-3xl" />
         <div className="flex flex-wrap gap-2">
@@ -249,15 +268,15 @@ function PictureCard() {
             type="file"
             accept="image/png,image/jpeg,image/webp,image/gif"
             className="sr-only"
-            aria-label="Choose a profile picture"
+            aria-label={t("settings.picture.choose")}
             onChange={(e) => upload(e.target.files?.[0])}
           />
           <Button size="sm" onClick={() => input.current?.click()} disabled={busy}>
-            {user.avatar_version ? "Change picture" : "Upload picture"}
+            {user.avatar_version ? t("settings.picture.change") : t("settings.picture.upload")}
           </Button>
           {user.avatar_version && (
             <Button size="sm" variant="outline" onClick={remove} disabled={busy}>
-              Remove
+              {t("settings.picture.remove")}
             </Button>
           )}
         </div>
@@ -270,6 +289,7 @@ function PictureCard() {
 }
 
 function NameCard() {
+  const { t } = useTranslation();
   const { user, setUser } = useSession();
   const [name, setName] = useState(user?.username ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -292,16 +312,16 @@ function NameCard() {
   const unchanged = name.trim() === user.username || !name.trim();
   return (
     <Card>
-      <CardHeader title="Name" />
+      <CardHeader title={t("settings.name.title")} />
       <form onSubmit={save} className="space-y-4 p-5">
-        <Field label="Username" help="You sign in with this name.">
+        <Field label={t("settings.name.username")} help={t("settings.name.help")}>
           <Input value={name} maxLength={64} autoComplete="username" onChange={(e) => setName(e.target.value)} />
         </Field>
         <div className="flex items-center gap-3">
           <Button type="submit" size="sm" disabled={unchanged}>
-            Save
+            {t("common.save")}
           </Button>
-          {saved && <span className="text-sm text-muted-foreground">Saved.</span>}
+          {saved && <span className="text-sm text-muted-foreground">{t("common.saved")}</span>}
         </div>
         <ErrorNote message={error} />
       </form>
@@ -310,6 +330,7 @@ function NameCard() {
 }
 
 function PasswordCard() {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -320,8 +341,8 @@ function PasswordCard() {
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (next.length < 8) return setError("The new password needs at least 8 characters.");
-    if (next !== confirm) return setError("The new passwords don't match.");
+    if (next.length < 8) return setError(t("settings.password.too_short"));
+    if (next !== confirm) return setError(t("settings.password.mismatch"));
     setBusy(true);
     try {
       await api.post("api/auth/password", { current_password: current, new_password: next });
@@ -338,9 +359,9 @@ function PasswordCard() {
 
   return (
     <Card>
-      <CardHeader title="Password" description="You stay signed in on this device." />
+      <CardHeader title={t("settings.password.title")} description={t("settings.password.help")} />
       <form onSubmit={save} className="space-y-4 p-5">
-        <Field label="Current password">
+        <Field label={t("settings.password.current")}>
           <Input
             type="password"
             autoComplete="current-password"
@@ -349,10 +370,10 @@ function PasswordCard() {
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="New password" help="At least 8 characters.">
+          <Field label={t("settings.password.new")} help={t("settings.password.new_help")}>
             <Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
           </Field>
-          <Field label="Confirm new password">
+          <Field label={t("settings.password.confirm")}>
             <Input
               type="password"
               autoComplete="new-password"
@@ -363,9 +384,9 @@ function PasswordCard() {
         </div>
         <div className="flex items-center gap-3">
           <Button type="submit" size="sm" disabled={busy || !current || !next || !confirm}>
-            Change password
+            {t("settings.password.change")}
           </Button>
-          {saved && <span className="text-sm text-muted-foreground">Password changed.</span>}
+          {saved && <span className="text-sm text-muted-foreground">{t("settings.password.changed")}</span>}
         </div>
         <ErrorNote message={error} />
       </form>

@@ -1,4 +1,6 @@
 import { lazy, StrictMode, Suspense } from "react";
+import { useTranslation } from "react-i18next";
+import "@/i18n";
 import { createRoot } from "react-dom/client";
 import { createHashRouter, Navigate, RouterProvider } from "react-router";
 import { Spinner } from "@/components/ui/card";
@@ -111,6 +113,7 @@ const router = createHashRouter([
 ]);
 
 function Root() {
+  const { t } = useTranslation();
   const { loading, info, user } = useSession();
   if (loading) {
     return (
@@ -119,7 +122,7 @@ function Root() {
       </div>
     );
   }
-  if (!info) return <p className="p-8">Can't reach the Kinora server.</p>;
+  if (!info) return <p className="p-8">{t("server.unreachable")}</p>;
   if (info.setup_required) return <SetupPage />;
   if (!user) return <LoginPage />;
   return (

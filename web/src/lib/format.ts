@@ -1,3 +1,5 @@
+import { i18n } from "@/i18n";
+
 export function formatDuration(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return "";
   const totalMinutes = Math.round(ms / 60000);
@@ -28,8 +30,8 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDate(ms: number | null | undefined): string {
-  if (!ms) return "never";
-  return new Date(ms).toLocaleString();
+  if (!ms) return i18n.t("common.never");
+  return new Date(ms).toLocaleString(i18n.language);
 }
 
 export function episodeCode(season: number | null, episode: number | null): string {

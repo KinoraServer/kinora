@@ -8,6 +8,7 @@
 //   - the skin says it doesn't support this kind of device.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { compileTemplates } from "./compile";
@@ -121,6 +122,7 @@ export const useSkin = () => useContext(SkinContext);
 const compiledCache = new Map<string, CompiledSkin>();
 
 export function SkinProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const { user, loading: sessionLoading } = useSession();
   const [bundle, setBundle] = useState<SkinBundle | null>(null);
   const [preview, setPreview] = useState<string | null>(() => storage.get(session, PREVIEW_KEY));
@@ -211,9 +213,9 @@ export function SkinProvider({ children }: { children: ReactNode }) {
   const reason = !bundle
     ? null
     : !scopeOk
-      ? "This browser is too old for app skins."
+      ? t("skins.browser_too_old")
       : !deviceOk
-        ? `This skin doesn't support ${device}s.`
+        ? t(`skins.device_${device}`)
         : null;
 
   const skin = useMemo(() => {

@@ -5,6 +5,7 @@
 // Kinora's own page for that view and the admin sees the error on the skin card.
 
 import { Component, useContext, useEffect, useMemo, useRef, type ErrorInfo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppLayout, UserMenu } from "@/components/AppLayout";
 import { api } from "@/lib/api";
@@ -206,6 +207,7 @@ function useActions(page: unknown, reload: () => void): SkinActions {
 
 /** Kinora widgets a skin can place with data-kn-component. */
 function SearchBox() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   return (
     <form
@@ -219,8 +221,8 @@ function SearchBox() {
       <input
         name="q"
         type="search"
-        placeholder="Search"
-        aria-label="Search"
+        placeholder={t("nav.search")}
+        aria-label={t("nav.search")}
         className="h-9 w-56 rounded-md border bg-card px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       />
     </form>

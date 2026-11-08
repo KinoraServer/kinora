@@ -8,6 +8,7 @@
 
 import { createElement, Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { i18n } from "@/i18n";
 import { RULES } from "./rules";
 import type { AppVM, CardVM, CompiledSkin, SkinElement, SkinNode } from "./types";
 
@@ -221,15 +222,20 @@ function toProps(el: SkinElement): Record<string, unknown> {
 // Images
 // ---------------------------------------------------------------------------
 
-const ACTION_LABELS: Record<string, string> = {
-  play: "Play",
-  resume: "Resume",
-  restart: "Play from the start",
-  "toggle-played": "Mark watched or unwatched",
-  logout: "Sign out",
-  "next-season": "Next season",
-  "prev-season": "Previous season",
-};
+/** Accessible names for action buttons the skin left unlabelled. */
+const ACTION_LABELS = {
+  play: "item.play",
+  resume: "item.resume",
+  restart: "item.play_from_start",
+  "toggle-played": "item.toggle_played",
+  logout: "nav.sign_out",
+  "next-season": "item.next_season",
+  "prev-season": "item.prev_season",
+} as const;
+
+function actionLabel(action: string): string | null {
+  return Object.hasOwn(ACTION_LABELS, action) ? i18n.t(ACTION_LABELS[action as keyof typeof ACTION_LABELS]) : null;
+}
 
 function imageUrl(
   kinds: string,
@@ -440,7 +446,8 @@ function renderElement(
       props["aria-label"] !== undefined ||
       kn.text !== undefined ||
       el.children.some((c) => c.t === "text" && c.v.trim());
-    if (!hasLabel && ACTION_LABELS[action]) props["aria-label"] = ACTION_LABELS[action];
+    const label = hasLabel ? null : actionLabel(action);
+    if (label) props["aria-label"] = label;
   }
   if (el.tag === "button" && props.type === undefined) props.type = "button";
 
