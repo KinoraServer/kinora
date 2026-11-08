@@ -6,6 +6,7 @@ use tokio::sync::{broadcast, RwLock};
 
 use crate::config::Config;
 use crate::hw::HardwareReport;
+use crate::now_playing::NowPlaying;
 use crate::scanner::ScanManager;
 use crate::transcode::TranscodeManager;
 
@@ -16,6 +17,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub hardware: Arc<RwLock<HardwareReport>>,
     pub transcodes: TranscodeManager,
+    /// Every playback in progress, for the dashboard.
+    pub now_playing: NowPlaying,
     pub scans: ScanManager,
     pub http: reqwest::Client,
     pub events: broadcast::Sender<ServerEvent>,

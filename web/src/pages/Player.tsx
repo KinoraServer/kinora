@@ -13,6 +13,8 @@ import type { ItemDetail, PlaybackStart, SessionStatus } from "@/lib/types";
 
 /** How often the player tells the server it's still here (paused counts). */
 const KEEPALIVE_MS = 10_000;
+/** How often the player reports its position and stats for the admin dashboard. */
+const HEARTBEAT_MS = 5_000;
 /** Give up recovering a lost stream after this many tries in a minute. */
 const MAX_RECOVERIES = 3;
 
@@ -52,6 +54,8 @@ function PlayerView({ id }: { id: string | undefined }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const sessionRef = useRef<string | null>(null);
+  /** This playback on the admin dashboard. */
+  const playRef = useRef<string | null>(null);
   const durationRef = useRef(0);
 
   const [playback, setPlayback] = useState<PlaybackStart | null>(null);
@@ -89,13 +93,15 @@ function PlayerView({ id }: { id: string | undefined }) {
   }, [id]);
 
   const stopSession = useCallback(() => {
+    const stop = { item_id: id, position_ms: Math.floor((videoRef.current?.currentTime ?? 0) * 1000) };
     if (sessionRef.current) {
-      beacon("DELETE", `api/hls/${sessionRef.current}`, {
-        item_id: id,
-        position_ms: Math.floor((videoRef.current?.currentTime ?? 0) * 1000),
-      });
+      // Also takes it off the dashboard.
+      beacon("DELETE", `api/hls/${sessionRef.current}`, stop);
       sessionRef.current = null;
+    } else if (playRef.current) {
+      beacon("DELETE", `api/now-playing/${playRef.current}`, stop);
     }
+    playRef.current = null;
     hlsRef.current?.destroy();
     hlsRef.current = null;
   }, [id]);
@@ -144,6 +150,8 @@ function PlayerView({ id }: { id: string | undefined }) {
         caps: browserCaps(),
         audio_index: audioIndex,
         force_transcode: forceTranscode,
+        client: { name: "Kinora web" },
+        start_ms: Math.floor(startAt.current * 1000),
       })
       .then((p) => {
         if (cancelled) return;
@@ -155,6 +163,7 @@ function PlayerView({ id }: { id: string | undefined }) {
         }
         durationRef.current = p.duration_ms;
         sessionRef.current = p.session_id;
+        playRef.current = p.play_id;
         const start = startAt.current;
 
         if (p.method === "direct_play") {
@@ -220,6 +229,36 @@ function PlayerView({ id }: { id: string | undefined }) {
     };
   }, [playback?.session_id, recover]);
 
+  // Tell the admin dashboard where we are, whether we're paused, and how playback is going.
+  // Sent every few seconds and right away when the player pauses, plays or stalls.
+  useEffect(() => {
+    const playId = playback?.play_id;
+    const v = videoRef.current;
+    if (!playId || !v) return;
+    let gone = false;
+    const send = () => {
+      if (gone || playRef.current !== playId) return;
+      const state = v.paused ? "paused" : v.readyState < 3 || v.seeking ? "buffering" : "playing";
+      api
+        .post(`api/now-playing/${playId}/heartbeat`, {
+          position_ms: Math.floor(v.currentTime * 1000),
+          state,
+          stats: statsRef.current?.report(),
+        })
+        .catch((e: Error & { status?: number }) => {
+          // 404: the server forgot this playback (asleep too long). Only the dashboard misses it.
+          if (e.status === 404) gone = true;
+        });
+    };
+    const events = ["play", "pause", "waiting", "playing", "seeked"] as const;
+    for (const e of events) v.addEventListener(e, send);
+    const timer = window.setInterval(send, HEARTBEAT_MS);
+    return () => {
+      clearInterval(timer);
+      for (const e of events) v.removeEventListener(e, send);
+    };
+  }, [playback?.play_id]);
+
   // Load exactly the chosen subtitle track (or none). Tracks are matched by the id we give each <track>.
   // "hidden" means the browser loads the cues but doesn't draw them: MediaPlayer draws them above
   // its controls. iPhone's native fullscreen hides our overlay, so there the browser draws them.
@@ -274,6 +313,9 @@ function PlayerView({ id }: { id: string | undefined }) {
     }, 10_000);
     const onHide = () => {
       saveProgress();
+      // A closed tab never unmounts: take direct play off the dashboard now.
+      // (HLS sessions are cleaned up by the server when the segments stop.)
+      if (!sessionRef.current && playRef.current) beacon("DELETE", `api/now-playing/${playRef.current}`, {});
     };
     window.addEventListener("pagehide", onHide);
     return () => {

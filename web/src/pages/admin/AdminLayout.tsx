@@ -5,10 +5,16 @@ import { cn } from "@/lib/utils";
 const tabs: {
   to: string;
   labelKey:
-    "admin.tab_dashboard" | "admin.tab_libraries" | "admin.tab_users" | "admin.tab_settings" | "admin.tab_modules";
+    | "admin.tab_dashboard"
+    | "admin.tab_activity"
+    | "admin.tab_libraries"
+    | "admin.tab_users"
+    | "admin.tab_settings"
+    | "admin.tab_modules";
   end?: boolean;
 }[] = [
   { to: "/admin", labelKey: "admin.tab_dashboard", end: true },
+  { to: "/admin/activity", labelKey: "admin.tab_activity" },
   { to: "/admin/libraries", labelKey: "admin.tab_libraries" },
   { to: "/admin/users", labelKey: "admin.tab_users" },
   { to: "/admin/settings", labelKey: "admin.tab_settings" },

@@ -374,6 +374,7 @@ async fn progress(
     Path(id): Path<String>,
     Json(p): Json<Progress>,
 ) -> AppResult<StatusCode> {
+    state.now_playing.progress(&user.id, &id, p.position_ms.max(0) as u64);
     let finished = p.duration_ms.map(|d| d > 0 && p.position_ms * 10 >= d * 9).unwrap_or(false);
     let position = if finished { 0 } else { p.position_ms.max(0) };
     sqlx::query(

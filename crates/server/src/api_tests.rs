@@ -562,3 +562,86 @@ async fn app_skins_starter_options_and_active_bundle() {
     let (_, list) = t.call("GET", "/api/app-skins", None, Some(&owner)).await;
     assert_eq!(list["skins"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn dashboard_lists_direct_play_and_follows_heartbeats() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (f1, _) = seed_show(&t.db).await;
+    // A client that plays the mkv as is: direct play, no transcoder involved.
+    let start = json!({
+        "caps": {"containers": ["mkv"], "video_codecs": ["h264"], "audio_codecs": ["aac"]},
+        "client": {"name": "Kinora web", "device": "Chrome on macOS"},
+        "start_ms": 60_000
+    });
+    let (s, body) = t.call("POST", &format!("/api/playback/{f1}"), Some(start), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["method"], "direct_play");
+    let play_id = body["play_id"].as_str().unwrap().to_string();
+
+    let (s, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    let row = &list[0];
+    assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(row["id"], play_id.as_str());
+    assert_eq!(row["method"], "direct_play");
+    assert_eq!(row["item"]["kind"], "episode");
+    assert_eq!(row["item"]["series_title"], "show");
+    assert_eq!(row["item"]["season"], 1);
+    assert_eq!(row["item"]["episode"], 1);
+    assert_eq!(row["client"]["device"], "Chrome on macOS");
+    assert_eq!(row["duration_ms"], 1_420_000);
+    assert_eq!(row["position_ms"], 60_000);
+    assert!(row["transcoder"].is_null());
+
+    // A paused heartbeat with stats.
+    let hb = json!({"position_ms": 120_000, "state": "paused",
+                    "stats": {"dropped_frames": 3, "total_frames": 900, "recent_errors": ["oops"]}});
+    let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(hb), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(list[0]["state"], "paused");
+    assert_eq!(list[0]["position_ms"], 120_000);
+    assert_eq!(list[0]["bitrate_bps"], 0);
+    assert_eq!(list[0]["client_stats"]["dropped_frames"], 3);
+    assert_eq!(list[0]["client_stats"]["recent_errors"][0], "oops");
+
+    // Clients without heartbeats still move the marker with their progress saves.
+    let (s, _) = t
+        .call(
+            "POST",
+            "/api/items/e1/progress",
+            Some(json!({"position_ms": 200_000, "duration_ms": 1_420_000})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(list[0]["position_ms"], 200_000);
+
+    // Viewers can't see the dashboard or touch someone else's playback.
+    t.call(
+        "POST",
+        "/api/users",
+        Some(json!({"username": "kid", "password": "password123", "role": "viewer"})),
+        Some(&owner),
+    )
+    .await;
+    let (_, login) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "kid", "password": "password123"})), None).await;
+    let viewer = login["token"].as_str().unwrap().to_string();
+    let (s, _) = t.call("GET", "/api/sessions", None, Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(json!({})), Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("DELETE", &format!("/api/now-playing/{play_id}"), None, Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+
+    // Closing the player removes it; later heartbeats get a 404.
+    let (s, _) = t.call("DELETE", &format!("/api/now-playing/{play_id}"), None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(list, json!([]));
+    let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(json!({})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+}

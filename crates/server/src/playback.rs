@@ -1,11 +1,13 @@
 //! Playback routes: decide how to play, direct streams, HLS, subtitles.
 
 use axum::body::Body;
-use axum::extract::{Path, Request, State};
-use axum::http::{header, StatusCode};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Path, Request, State};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use kinora_core::ffmpeg::Tonemapper;
 use kinora_core::hls::{parse_segment_name, vod_playlist, INIT_NAME, SEGMENT_SECONDS};
 use kinora_core::media::{HdrFormat, MediaInfo};
@@ -18,6 +20,7 @@ use tower_http::services::ServeFile;
 
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
+use crate::now_playing::{ClientInfo, Heartbeat, ItemSummary, PlayInput, StreamInfo};
 use crate::state::AppState;
 use crate::transcode::{SegmentError, SessionInput};
 
@@ -31,6 +34,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/hls/{session}", delete(stop))
         .route("/api/subtitles/{file_id}/{index}", get(subtitle))
         .route("/api/sessions", get(active_sessions))
+        .route("/api/now-playing/{id}/heartbeat", post(heartbeat))
+        .route("/api/now-playing/{id}", delete(end_playback))
 }
 
 struct FileRow {
@@ -65,6 +70,12 @@ struct StartRequest {
     /// Force a transcode even if direct play would work (for testing / bad files).
     #[serde(default)]
     force_transcode: bool,
+    /// Who is playing, for the dashboard. Filled in from the User-Agent when missing.
+    #[serde(default)]
+    client: Option<ClientInfo>,
+    /// Where playback starts, so the dashboard has a position before the first heartbeat.
+    #[serde(default)]
+    start_ms: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -88,6 +99,9 @@ struct StartResponse {
     /// Relative URL (works behind reverse proxies with a sub-path).
     url: String,
     session_id: Option<String>,
+    /// This playback on the dashboard: send heartbeats to `api/now-playing/{play_id}/heartbeat`.
+    /// The same as `session_id` for HLS.
+    play_id: String,
     plan: PlaybackPlan,
     duration_ms: u64,
     subtitles: Vec<SubtitleTrack>,
@@ -102,6 +116,8 @@ async fn start(
     State(state): State<AppState>,
     user: AuthUser,
     Path(file_id): Path<String>,
+    headers: HeaderMap,
+    connect: Option<Extension<ConnectInfo<SocketAddr>>>,
     Json(req): Json<StartRequest>,
 ) -> AppResult<Json<StartResponse>> {
     let file = load_file(&state, &file_id).await?;
@@ -140,8 +156,8 @@ async fn start(
         })
         .collect();
 
-    let title: String =
-        sqlx::query_scalar("SELECT title FROM items WHERE id = ?").bind(&file.item_id).fetch_one(&state.db).await?;
+    let item = item_summary(&state, &file.item_id).await?;
+    let title = item.title.clone();
 
     state.emit(ServerEvent::PlaybackStarted {
         user_id: user.id.clone(),
@@ -172,10 +188,31 @@ async fn start(
         (format!("api/hls/{id}/main.m3u8"), Some(id))
     };
 
+    let play_id = session_id.clone().unwrap_or_else(crate::db::new_id);
+    let user_agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok());
+    let address = client_address(&headers, connect.map(|Extension(ConnectInfo(a))| a));
+    state.now_playing.insert(
+        play_id.clone(),
+        PlayInput {
+            user_id: user.id.clone(),
+            username: user.username.clone(),
+            file_id: file_id.clone(),
+            item,
+            method: plan.method,
+            plan: plan.clone(),
+            hardware: hw.accel.label().to_string(),
+            client: ClientInfo::resolve(req.client, user_agent, address),
+            media: file.info.clone(),
+            url: url.clone(),
+        },
+        req.start_ms,
+    );
+
     Ok(Json(StartResponse {
         method: plan.method,
         url,
         session_id,
+        play_id,
         duration_ms: file.info.duration_ms,
         plan,
         subtitles,
@@ -187,10 +224,11 @@ async fn start(
 /// Serve the original file with HTTP range support (seeking).
 async fn direct(
     State(state): State<AppState>,
-    _user: AuthUser,
+    user: AuthUser,
     Path(file_id): Path<String>,
     request: Request,
 ) -> AppResult<Response> {
+    state.now_playing.touch_file(&user.id, &file_id);
     let path: String =
         sqlx::query_scalar("SELECT path FROM media_files WHERE id = ?").bind(&file_id).fetch_one(&state.db).await?;
     let resp = ServeFile::new(&path).oneshot(request).await.map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
@@ -221,6 +259,7 @@ async fn segment(
     Path((session, segment)): Path<(String, String)>,
 ) -> AppResult<Response> {
     check_session(&state, &user, &session).await?;
+    state.now_playing.touch(&session);
     let result = if segment == INIT_NAME {
         state.transcodes.init_segment(&session).await
     } else {
@@ -249,6 +288,7 @@ async fn keepalive(
     Path(session): Path<String>,
 ) -> AppResult<Json<crate::transcode::SessionStatus>> {
     check_session(&state, &user, &session).await?;
+    state.now_playing.touch(&session);
     state.transcodes.keepalive(&session).await.map(Json).ok_or(AppError::NotFound)
 }
 
@@ -268,6 +308,7 @@ async fn stop(
 ) -> AppResult<StatusCode> {
     check_session(&state, &user, &session).await?;
     state.transcodes.stop(&session).await;
+    state.now_playing.remove(&session);
     if let Some(Json(b)) = body {
         if let (Some(item_id), Some(position_ms)) = (b.item_id, b.position_ms) {
             state.emit(ServerEvent::PlaybackStopped { user_id: user.id, item_id, position_ms });
@@ -298,10 +339,80 @@ async fn subtitle(
     Ok(([(header::CONTENT_TYPE, "text/vtt; charset=utf-8")], out.stdout).into_response())
 }
 
-async fn active_sessions(
+/// Everything playing right now, every method (admin dashboard).
+async fn active_sessions(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<StreamInfo>>> {
+    user.require(Role::Admin)?;
+    let statuses = state.transcodes.all_status().await;
+    Ok(Json(state.now_playing.list(|id| statuses.get(id).cloned())))
+}
+
+fn check_play(state: &AppState, user: &AuthUser, id: &str) -> AppResult<()> {
+    match state.now_playing.owner(id) {
+        Some(owner) if owner == user.id || user.role.at_least(Role::Admin) => Ok(()),
+        Some(_) => Err(AppError::Forbidden),
+        None => Err(AppError::NotFound),
+    }
+}
+
+/// The player is still open: where it is, playing or paused, and a few stats.
+/// 404 means the playback was forgotten (start a new one to show up again).
+async fn heartbeat(
     State(state): State<AppState>,
     user: AuthUser,
-) -> AppResult<Json<Vec<crate::transcode::SessionInfo>>> {
-    user.require(Role::Admin)?;
-    Ok(Json(state.transcodes.list().await))
+    Path(id): Path<String>,
+    Json(hb): Json<Heartbeat>,
+) -> AppResult<StatusCode> {
+    check_play(&state, &user, &id)?;
+    state.now_playing.touch(&id);
+    if state.now_playing.heartbeat(&id, hb) {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+/// The player closed (direct play; HLS players stop their session instead).
+async fn end_playback(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    body: Option<Json<StopBody>>,
+) -> AppResult<StatusCode> {
+    check_play(&state, &user, &id)?;
+    let Some((item_id, last)) = state.now_playing.remove(&id) else { return Ok(StatusCode::NO_CONTENT) };
+    // An HLS session ends with its transcode.
+    state.transcodes.stop(&id).await;
+    let position_ms = body.and_then(|Json(b)| b.position_ms).or(last).unwrap_or(0);
+    state.emit(ServerEvent::PlaybackStopped { user_id: user.id, item_id, position_ms });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn item_summary(state: &AppState, item_id: &str) -> AppResult<ItemSummary> {
+    let (kind, title, series_title, season, episode, year): (
+        String,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+    ) = sqlx::query_as(
+        "SELECT i.kind, i.title, s.title, i.season_number, i.episode_number, COALESCE(i.year, s.year)
+         FROM items i LEFT JOIN items s ON s.id = i.series_id WHERE i.id = ?",
+    )
+    .bind(item_id)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(ItemSummary { id: item_id.to_string(), kind, title, series_title, season, episode, year })
+}
+
+/// The viewer's address: the first hop a reverse proxy reports, else the connection's.
+fn client_address(headers: &HeaderMap, peer: Option<SocketAddr>) -> Option<String> {
+    let forwarded = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty() && v.len() <= 64);
+    forwarded.or_else(|| peer.map(|p| p.ip().to_string()))
 }

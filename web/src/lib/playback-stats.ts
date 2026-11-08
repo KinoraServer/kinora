@@ -10,7 +10,7 @@ import type Hls from "hls.js";
 import { i18n } from "@/i18n";
 import { formatBytes, formatClock } from "./format";
 import { describeAutoTracks } from "./subtitles";
-import type { MediaFile, PlaybackStart, SessionStatus } from "./types";
+import type { ClientStats, MediaFile, PlaybackStart, SessionStatus } from "./types";
 
 export type InfoIcon = "video" | "audio" | "color" | "performance" | "buffer" | "app" | "server" | "network" | "list";
 
@@ -112,7 +112,7 @@ export function bufferedAhead(r: TimeRanges, t: number): number {
   return 0;
 }
 
-function hdrLabel(hdr: string | undefined, dvProfile?: number | null, compat?: number | null): string {
+export function hdrLabel(hdr: string | undefined, dvProfile?: number | null, compat?: number | null): string {
   switch (hdr) {
     case "hdr10":
       return "HDR10";
@@ -267,6 +267,28 @@ export class PlaybackStats {
     const bytes = recent.reduce((n, f) => n + f.bytes, 0);
     const ms = recent.reduce((n, f) => n + f.ms, 0);
     return ms > 0 ? (bytes * 8 * 1000) / ms : null;
+  }
+
+  /** The numbers the admin dashboard shows for this playback (sent with each heartbeat). */
+  report(): ClientStats {
+    const v = this.video;
+    const frames = this.renderFps();
+    const level = this.hls && this.hls.currentLevel >= 0 ? this.hls.levels[this.hls.currentLevel] : null;
+    const throughput = this.throughput();
+    return {
+      render_fps: frames.fps === null ? null : Math.round(frames.fps * 100) / 100,
+      dropped_frames: frames.dropped,
+      total_frames: frames.total,
+      stalls: this.stalls,
+      stalled_ms: Math.round(this.stalledMs),
+      buffered_ahead_s: Math.round(bufferedAhead(v.buffered, v.currentTime) * 10) / 10,
+      download_bps: throughput === null ? null : Math.round(throughput),
+      stream_bitrate_bps: level?.bitrate ?? null,
+      decoded_size: v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : null,
+      player: this.hls ? `Kinora web · hls.js ${this.hlsVersion}` : "Kinora web · native",
+      recoveries: this.recoveries,
+      recent_errors: [...this.errors],
+    };
   }
 
   snapshot(ctx: InfoContext): PlayerInfo {
