@@ -590,7 +590,10 @@ async fn assemble(s: &mut Session) {
     for (index, parts) in complete_segments(&s.timeline, &pieces, current, finished) {
         let target = s.dir.join(segment_name(index, SegmentFormat::Fmp4));
         if !target.exists() {
-            if let Err(e) = join_pieces(&s.dir, &parts, &target) {
+            // A segment can be tens of MB; copy it off the async threads.
+            let (dir, list) = (s.dir.clone(), parts.clone());
+            let joined = tokio::task::spawn_blocking(move || join_pieces(&dir, &list, &target)).await;
+            if let Err(e) = joined.map_err(anyhow::Error::from).and_then(|r| r.map_err(anyhow::Error::from)) {
                 tracing::warn!(session = %s.dir.display(), index, error = %e, "couldn't join segment");
                 continue;
             }

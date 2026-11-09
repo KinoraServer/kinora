@@ -101,7 +101,7 @@ pub fn first_video_time_ms(segment: &[u8], track: &VideoTrack) -> Option<u64> {
 
 /// Composition offset of the first sample in a `trun`, if it has one.
 fn first_composition_offset(trun: &[u8]) -> Option<i64> {
-    let version = trun[0];
+    let version = *trun.first()?;
     let flags = be32(trun, 0)? & 0x00FF_FFFF;
     if flags & 0x800 == 0 || be32(trun, 4)? == 0 {
         return None;
