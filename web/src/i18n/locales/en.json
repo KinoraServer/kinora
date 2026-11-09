@@ -314,15 +314,12 @@
   "admin": {
     "title": "Admin",
     "tab_dashboard": "Dashboard",
+    "tab_activity": "Activity",
     "tab_libraries": "Libraries",
     "tab_users": "Users",
     "tab_settings": "Settings",
     "tab_modules": "Modules & themes",
     "dashboard": {
-      "streams": "Active streams",
-      "streams_help": "Direct play streams don't use the transcoder and aren't listed here.",
-      "streams_empty": "Nothing is transcoding right now",
-      "running_min": "{{count}} min",
       "activity": "Recent activity",
       "activity_empty": "No activity yet.",
       "someone": "Someone",
@@ -331,7 +328,8 @@
       "item_added": "Added \"{{title}}\"",
       "scan_started": "Library scan started",
       "scan_finished": "Library scan finished: {{added}} added, {{removed}} removed",
-      "user_created": "New user {{username}}"
+      "user_created": "New user {{username}}",
+      "activity_help": "Playback, library scans and new users. Turn the Activity log module on or off under Modules & themes."
     },
     "libraries": {
       "title": "Libraries",
@@ -475,6 +473,73 @@
       "color_picker": "{{label}} picker",
       "color_placeholder": "empty: the theme's colour",
       "save_options": "Save options"
+    },
+    "streams": {
+      "title": "Now playing",
+      "live": "Live · updates every 2 s",
+      "empty": "Nothing is playing right now",
+      "empty_body": "Every stream shows up here as soon as it starts: Direct Play, Direct Stream and Transcode.",
+      "total": "Streaming now",
+      "bandwidth": "Outgoing bandwidth",
+      "method_direct_play": "Direct Play",
+      "method_remux": "Direct Stream",
+      "method_transcode": "Transcode",
+      "state_playing": "Playing",
+      "state_paused": "Paused",
+      "state_buffering": "Buffering",
+      "started_now": "started just now",
+      "started_min": "started {{count}} min ago",
+      "started_hr": "started {{count}} hr ago",
+      "unknown_app": "Unknown app",
+      "reason_direct_play": "Original file, nothing converted",
+      "reason_remux": "Direct Stream: {{reasons}}",
+      "reason_transcode": "Transcoding: {{reasons}}",
+      "info": "Info",
+      "trace": "Trace",
+      "copy_trace": "Copy trace",
+      "copied": "Copied",
+      "ffmpeg_speed": "ffmpeg {{speed}}× realtime",
+      "paused_bandwidth": "paused",
+      "progress": "Playback position",
+      "section": {
+        "video": "Video",
+        "audio": "Audio",
+        "stream": "Stream",
+        "viewer": "Viewer",
+        "session": "Session",
+        "transcoder": "Transcoder",
+        "player": "Player",
+        "errors": "Errors and warnings"
+      },
+      "row": {
+        "source": "Source",
+        "output": "Output",
+        "copied": "copied",
+        "dynamic_range": "Dynamic range",
+        "frame_rate": "Frame rate",
+        "container": "Container",
+        "source_bitrate": "Source bitrate",
+        "stream_bitrate": "Stream bitrate",
+        "method": "Method",
+        "why": "Why",
+        "user": "User",
+        "app": "App",
+        "device": "Device",
+        "address": "Address",
+        "started": "Started",
+        "last_seen": "Last heard from",
+        "state": "state",
+        "speed_fps": "speed / fps",
+        "dropped_total": "dropped / total frames",
+        "stalls": "stalls",
+        "buffered_ahead": "buffered ahead",
+        "download_speed": "download speed",
+        "decoded_size": "decoded size",
+        "player": "player",
+        "recoveries": "recoveries",
+        "no_client_stats": "This app doesn't send player stats yet.",
+        "no_errors": "none"
+      }
     }
   },
   "theme": {
@@ -516,5 +581,11 @@
       "too_big": "The skin is too big.",
       "unsupported_compression": "{{path}} uses a compression method this browser can't read. Zip it again with a standard tool."
     }
+  },
+  "time": {
+    "hr_min": "{{h}}hr {{m}}min",
+    "hr": "{{h}}hr",
+    "min": "{{m}}min",
+    "position_of": "{{position}} of {{duration}}"
   }
 }

@@ -8,6 +8,7 @@ mod hw;
 mod items;
 mod libraries;
 mod modules;
+mod now_playing;
 mod playback;
 mod probe;
 mod scanner;
@@ -30,6 +31,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::hw::HardwareReport;
+use crate::now_playing::NowPlaying;
 use crate::scanner::ScanManager;
 use crate::state::AppState;
 use crate::transcode::TranscodeManager;
@@ -80,6 +82,7 @@ pub async fn build_state(config: Config) -> anyhow::Result<AppState> {
         config: Arc::new(config),
         hardware: Arc::new(RwLock::new(HardwareReport::default())),
         transcodes,
+        now_playing: NowPlaying::new(),
         scans: ScanManager::default(),
         http,
         events,
@@ -111,7 +114,10 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("listening on http://{addr}");
-    axum::serve(listener, router(state)).with_graceful_shutdown(shutdown_signal()).await?;
+    // Connection info gives the dashboard each viewer's address.
+    axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
     Ok(())
 }
 
