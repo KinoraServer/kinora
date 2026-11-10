@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import type { Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { episodeCode, progressPercent } from "@/lib/format";
@@ -69,9 +70,12 @@ export function MediaRow({ title, items, wide }: { title: string; items: ItemCar
   );
 }
 
-export function ItemGrid({ items }: { items: ItemCard[] }) {
+export function ItemGrid({ items, ref }: { items: ItemCard[]; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-4 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]">
+    <div
+      ref={ref}
+      className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-4 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]"
+    >
       {items.map((item) => (
         <ItemTile key={item.id} item={item} />
       ))}

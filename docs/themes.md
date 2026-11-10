@@ -54,6 +54,10 @@ A theme without a pair always uses its own scheme.
 | `radius` | Corner rounding, e.g. `0.75rem` |
 | `font-sans` | Font stack, e.g. `Inter, system-ui, sans-serif` (the font must be installed on the viewer's device) |
 
+The A–Z rail on library pages is drawn from these too: frosted `card` glass,
+`foreground` letters, `muted-foreground` for letters with no titles and
+`primary` / `primary-foreground` for the current letter.
+
 `scheme` is `"dark"` or `"light"` and tells the browser how to draw built-in
 controls like scrollbars and the video player.
 

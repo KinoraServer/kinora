@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router";
 import { ItemGrid } from "@/components/ItemTile";
+import { LetterRail } from "@/components/LetterRail";
 import { Empty, ErrorNote, Spinner } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { useApi } from "@/lib/session";
 import type { ItemCard, Library } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export function LibraryPage() {
   const { t } = useTranslation();
@@ -15,10 +17,18 @@ export function LibraryPage() {
   const { data: libraries } = useApi<Library[]>("api/libraries");
   const library = libraries?.find((l) => l.id === id);
   const { data, error, loading } = useApi<ItemCard[]>(`api/items?library_id=${id}&sort=${sort}`, [id, sort]);
-  const items = data?.filter((i) => i.title.toLowerCase().includes(filter.toLowerCase())) ?? [];
+  const items = useMemo(
+    () => data?.filter((i) => i.title.toLowerCase().includes(filter.toLowerCase())) ?? [],
+    [data, filter],
+  );
+  const titles = useMemo(() => items.map((i) => i.title), [items]);
+  const grid = useRef<HTMLDivElement>(null);
+  // The A–Z rail only makes sense when the grid is in title order.
+  const showRail = sort === "title" && items.length > 0;
 
   return (
-    <div className="space-y-6">
+    // Room on the right for the rail, so it never sits on top of a poster.
+    <div className={cn("space-y-6", showRail && "pr-5 sm:pr-4")}>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{library?.name ?? t("library.title")}</h1>
@@ -52,7 +62,8 @@ export function LibraryPage() {
           {data.length ? t("library.no_matches_hint") : t("library.empty_hint")}
         </Empty>
       )}
-      <ItemGrid items={items} />
+      <ItemGrid ref={grid} items={items} />
+      {showRail && <LetterRail titles={titles} grid={grid} />}
     </div>
   );
 }
