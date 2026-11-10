@@ -163,6 +163,13 @@ pub struct StreamUser {
     pub username: String,
 }
 
+/// What `NowPlaying::remove` took off the list.
+pub struct Removed {
+    pub item_id: String,
+    pub file_id: String,
+    pub position_ms: Option<u64>,
+}
+
 #[derive(Clone, Default)]
 pub struct NowPlaying {
     entries: Arc<Mutex<HashMap<String, Entry>>>,
@@ -247,11 +254,16 @@ impl NowPlaying {
         }
     }
 
-    /// Remove an entry, returning its item and last known position.
-    pub fn remove(&self, id: &str) -> Option<(String, Option<u64>)> {
+    /// Remove an entry, returning its item, file and last known position.
+    pub fn remove(&self, id: &str) -> Option<Removed> {
         let e = self.lock().remove(id)?;
-        let position = current_position(&e);
-        Some((e.input.item.id.clone(), position))
+        let position_ms = current_position(&e);
+        Some(Removed { item_id: e.input.item.id.clone(), file_id: e.input.file_id.clone(), position_ms })
+    }
+
+    /// Is anyone still playing this file?
+    pub fn is_playing_file(&self, file_id: &str) -> bool {
+        self.lock().values().any(|e| e.input.file_id == file_id)
     }
 
     fn prune(&self) {

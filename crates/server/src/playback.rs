@@ -379,11 +379,22 @@ async fn end_playback(
     body: Option<Json<StopBody>>,
 ) -> AppResult<StatusCode> {
     check_play(&state, &user, &id)?;
-    let Some((item_id, last)) = state.now_playing.remove(&id) else { return Ok(StatusCode::NO_CONTENT) };
-    // An HLS session ends with its transcode.
+    let Some(removed) = state.now_playing.remove(&id) else { return Ok(StatusCode::NO_CONTENT) };
+    // An HLS session ends with its transcode (which also lets go of the file's page cache).
     state.transcodes.stop(&id).await;
-    let position_ms = body.and_then(|Json(b)| b.position_ms).or(last).unwrap_or(0);
-    state.emit(ServerEvent::PlaybackStopped { user_id: user.id, item_id, position_ms });
+    if !state.now_playing.is_playing_file(&removed.file_id) {
+        let path: Option<String> = sqlx::query_scalar("SELECT path FROM media_files WHERE id = ?")
+            .bind(&removed.file_id)
+            .fetch_optional(&state.db)
+            .await?;
+        if let Some(path) = path {
+            if !state.transcodes.is_playing(&path).await {
+                crate::page_cache::release(path);
+            }
+        }
+    }
+    let position_ms = body.and_then(|Json(b)| b.position_ms).or(removed.position_ms).unwrap_or(0);
+    state.emit(ServerEvent::PlaybackStopped { user_id: user.id, item_id: removed.item_id, position_ms });
     Ok(StatusCode::NO_CONTENT)
 }
 
