@@ -56,7 +56,9 @@ export function MediaRow({ title, items, wide }: { title: string; items: ItemCar
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="scrollbar-none -mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-8 sm:px-8">
+      {/* A scroller clips vertically too: the padding (pulled back with a negative margin)
+          leaves room for the hover ring above the tiles. */}
+      <div className="scrollbar-none -mx-4 -mt-1 flex gap-4 overflow-x-auto px-4 pt-1 pb-2 sm:-mx-8 sm:px-8">
         {items.map((item) => (
           <ItemTile
             key={item.id}
