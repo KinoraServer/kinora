@@ -9,6 +9,7 @@ mod items;
 mod libraries;
 mod modules;
 mod now_playing;
+mod page_cache;
 mod playback;
 mod probe;
 mod scanner;

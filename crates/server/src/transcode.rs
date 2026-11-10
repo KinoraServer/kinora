@@ -21,7 +21,8 @@
 //! matters because the transcode folder is often in RAM (/tmp on Unraid).
 //!
 //! Idle sessions are killed and their folders deleted. A paused player stops
-//! asking for segments, so it pings `keepalive` to keep its session.
+//! asking for segments, so it pings `keepalive` to keep its session. When a
+//! session ends, the source file's page cache is let go (see `page_cache`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -245,7 +246,21 @@ impl TranscodeManager {
             let mut s = s.lock().await;
             kill(&mut s).await;
             let _ = tokio::fs::remove_dir_all(&s.dir).await;
+            if !self.is_playing(&s.input.file_path).await {
+                crate::page_cache::release(&s.input.file_path);
+            }
         }
+    }
+
+    /// Is any session reading this file?
+    pub async fn is_playing(&self, file_path: &str) -> bool {
+        let sessions: Vec<Arc<Mutex<Session>>> = self.sessions.lock().await.values().cloned().collect();
+        for s in sessions {
+            if s.lock().await.input.file_path == file_path {
+                return true;
+            }
+        }
+        false
     }
 
     /// Path of a finished segment, starting or restarting ffmpeg as needed.
