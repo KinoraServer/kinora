@@ -163,7 +163,7 @@ Repeated elements get state attributes for CSS: `data-kind`, `data-played`,
 | `data-kn-action="play"` | A button: `play`, `resume`, `restart`, `toggle-played`, `logout`, `next-season`, `prev-season`. |
 | `<input type="search" data-kn-search>` | Live search; typing opens the search page. |
 | `<select data-kn-select="sort">` | Filled with the options and wired up: `sort` (library) or `season` (series). |
-| `data-kn-component="user-menu"` | Kinora's own account menu (or `search-box`), in the theme's colours. |
+| `data-kn-component="user-menu"` | Kinora's own account menu (or `search-box`, or `watch-party`: the watch party button, nothing while that module is off), in the theme's colours. |
 
 Links and actions are the only way to navigate or change anything: `href`,
 `src` and event handlers you write yourself are removed.

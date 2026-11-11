@@ -26,6 +26,9 @@ importers:
       lucide-react:
         specifier: ^1.70.0
         version: 1.70.0(@types/react@19.3.0)(react@19.3.1)
+      openwatchparty:
+        specifier: 1.1.0
+        version: 1.1.0
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -1684,6 +1687,10 @@ packages:
   open@10.2.0:
     resolution: {integrity: sha512-YgBpdJHPyQ2UE5x+hlSXcnejzAvD0b22U2OuAP+8OnlJT+PjWPxtgmGqKKc+RgTM63U9gN0YzrYc71R2WT/hTA==}
     engines: {node: '>=18'}
+
+  openwatchparty@1.1.0:
+    resolution: {integrity: sha512-WsQ1qmlYqhcXLbVYuZwTZSoaU6hIHKi9rvI+n1wrcZCYDFuXqaX4cExC5gW/yav4/MgDZ9Yat+OakF5ODcb6Tw==}
+    engines: {node: '>=22'}
 
   oxc-parser@0.127.0:
     resolution: {integrity: sha512-bkgD4qHlN7WxLdX8bLXdaU54TtQtAIg/ZBAfm0aje/mo3MRDo3P0hZSgr4U7O3xfX+fQmR5AP04JS/TGcZLcFA==}
@@ -3406,6 +3413,8 @@ snapshots:
       define-lazy-prop: 3.0.0
       is-inside-container: 1.0.0
       wsl-utils: 0.1.0
+
+  openwatchparty@1.1.0: {}
 
   oxc-parser@0.127.0:
     dependencies:

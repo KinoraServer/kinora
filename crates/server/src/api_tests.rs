@@ -645,3 +645,74 @@ async fn dashboard_lists_direct_play_and_follows_heartbeats() {
     let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(json!({})), Some(&owner)).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn watch_party_is_off_by_default_and_resolves_titles_when_on() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    seed_show(&t.db).await;
+    sqlx::query("UPDATE items SET title = 'Kantai Show', provider_ids = '{\"tmdb\":\"1396\"}' WHERE id = 'show'")
+        .execute(&t.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE items SET title = 'Pilot', provider_ids = '{\"tmdb\":62085,\"custom\":\"x\"}' WHERE id = 'e1'")
+        .execute(&t.db)
+        .await
+        .unwrap();
+
+    // Off: the web app hides parties and the resolver routes answer 404.
+    let (s, cfg) = t.call("GET", "/api/watch-party", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(cfg["enabled"], false);
+    assert!(cfg["client"].as_str().unwrap().starts_with("Kinora/"));
+    let (s, _) = t.call("GET", "/api/watch-party/items/e1", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+
+    // On, with no other settings: the public relay (no relay URL).
+    let (s, _) = t.call("PUT", "/api/modules/watch-party", Some(json!({"enabled": true})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, cfg) = t.call("GET", "/api/watch-party", None, Some(&owner)).await;
+    assert_eq!(cfg["enabled"], true);
+    assert_eq!(cfg["relay_url"], Value::Null);
+
+    // An own relay: checked, trimmed and handed to the web app.
+    let bad = json!({"settings": {"relay_url": "relay.example.com"}});
+    let (s, _) = t.call("PUT", "/api/modules/watch-party", Some(bad), Some(&owner)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let good = json!({"settings": {"relay_url": " https://relay.example.com "}});
+    let (s, _) = t.call("PUT", "/api/modules/watch-party", Some(good), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, cfg) = t.call("GET", "/api/watch-party", None, Some(&owner)).await;
+    assert_eq!(cfg["relay_url"], "https://relay.example.com");
+
+    // The host's own item, with only the namespaces Open Watch Party knows.
+    let (s, item) = t.call("GET", "/api/watch-party/items/e1", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{item}");
+    assert_eq!(item["kind"], "episode");
+    assert_eq!(item["ids"], json!({"tmdb": "62085"}));
+    assert_eq!(item["show"]["title"], "Kantai Show");
+    assert_eq!(item["show"]["ids"], json!({"tmdb": "1396"}));
+    assert_eq!(item["duration_ms"], 1_420_000);
+
+    // Step 1: by the episode's own ID, or by the series ID narrowed to the same numbers.
+    let (_, found) =
+        t.call("POST", "/api/watch-party/find", Some(json!({"ids": {"tmdb": "62085"}})), Some(&owner)).await;
+    assert_eq!(found.as_array().unwrap().len(), 1);
+    assert_eq!(found[0]["id"], "e1");
+    let body = json!({"series_ids": {"tmdb": "1396"}, "season": 1, "episode": 2});
+    let (_, found) = t.call("POST", "/api/watch-party/find", Some(body), Some(&owner)).await;
+    assert_eq!(found.as_array().unwrap().len(), 1);
+    assert_eq!(found[0]["id"], "e2");
+    // Unknown namespaces are ignored, never used as a JSON path.
+    let body = json!({"ids": {"x') OR 1=1 --": "1"}});
+    let (_, found) = t.call("POST", "/api/watch-party/find", Some(body), Some(&owner)).await;
+    assert_eq!(found, json!([]));
+
+    // Step 2: episodes by their show's title, the room's numbers first; LIKE wildcards are literal.
+    let (_, found) =
+        t.call("GET", "/api/watch-party/search?q=kantai&kind=episode&season=1&episode=2", None, Some(&owner)).await;
+    assert_eq!(found.as_array().unwrap().len(), 2);
+    assert_eq!(found[0]["id"], "e2");
+    let (_, found) = t.call("GET", "/api/watch-party/search?q=%25&kind=episode", None, Some(&owner)).await;
+    assert_eq!(found, json!([]));
+}

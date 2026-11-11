@@ -1,4 +1,4 @@
-import { MonitorPlay, Puzzle } from "lucide-react";
+import { ExternalLink, MonitorPlay, Puzzle, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { BUILTIN_STYLES, type PlayerStyleSetting, THEME_STYLE } from "@/lib/play
 import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import type { PlayerSkin } from "@/lib/types";
+import { PRIVACY_URL, SELF_HOSTING_URL } from "@/watch-party/WatchPartyPanel";
+import { useWatchPartyReload } from "@/watch-party/WatchPartyProvider";
 
 interface SettingField {
   key: string;
@@ -164,12 +166,14 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const reloadWatchParty = useWatchPartyReload();
 
   const update = async (body: object) => {
     setError(null);
     try {
       await api.put(`api/modules/${m.id}`, body);
       onChange();
+      if (m.id === "watch-party") reloadWatchParty();
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -231,6 +235,7 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
         </div>
       )}
       {m.id === "auto-tracks" && <ForgetTrackChoices />}
+      {m.id === "watch-party" && <WatchPartyNotice />}
       {textFields.length > 0 && (
         <div className="space-y-4 border-t p-5">
           {textFields.map((f) => (
@@ -282,6 +287,30 @@ function ForgetTrackChoices() {
         {state === "done" ? t("admin.modules.forget_done") : t("admin.modules.forget_hint")}
       </span>
       <ErrorNote message={error} />
+    </div>
+  );
+}
+
+/** The public relay is public: say so, and show how to run a private one. */
+function WatchPartyNotice() {
+  const { t } = useTranslation();
+  const link = "inline-flex items-center gap-1 text-primary underline underline-offset-2 hover:brightness-110";
+  return (
+    <div className="border-t p-5">
+      <div className="flex gap-3 rounded-md border border-primary/40 bg-primary/10 p-3 text-sm">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div className="space-y-2">
+          <p>{t("admin.modules.watch_party_public")}</p>
+          <p className="flex flex-wrap gap-x-4 gap-y-1">
+            <a href={SELF_HOSTING_URL} target="_blank" rel="noreferrer" className={link}>
+              {t("admin.modules.watch_party_self_host")} <ExternalLink className="h-3 w-3" />
+            </a>
+            <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className={link}>
+              {t("admin.modules.watch_party_privacy")} <ExternalLink className="h-3 w-3" />
+            </a>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -44,6 +44,8 @@ pub enum ExtensionPoint {
     TrackSelection,
     /// Whole-app markup and CSS (docs/app-skins.md).
     AppSkin,
+    /// Synced viewing with other people (docs/watch-party.md).
+    WatchParty,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
