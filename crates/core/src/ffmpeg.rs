@@ -169,6 +169,9 @@ pub struct HlsJob<'a> {
     /// Where the start segment begins. With `keyframe_pieces` this is a
     /// keyframe time from the file's index, not `start_segment * segment_seconds`.
     pub start_ms: u64,
+    /// Timestamp of the file's first keyframe (`keyframe_pieces` only):
+    /// playlist time 0 is this far into the file's own timestamps.
+    pub origin_ms: u64,
     /// Copied video on a keyframe timeline: cut at every keyframe into
     /// `gop_<run>_<n>.m4s` pieces, which the server groups into the
     /// playlist's segments (see `kinora_core::hls::complete_segments`).
@@ -179,6 +182,14 @@ pub struct HlsJob<'a> {
 
 /// How much earlier a restarted keyframe run starts its audio.
 const AUDIO_PREROLL_MS: u64 = 1000;
+
+/// Keyframe pieces are written with the file's timestamps moved this far
+/// forward. A run from the start of a file has negative decode times (B-frames), and
+/// ffmpeg would shift that run alone to make them fit; then its segments
+/// would sit a few frames later than the same segments from a restarted run,
+/// leaving a gap or an overlap where the two meet. With the same offset on
+/// every run nothing goes negative and every run writes the same times.
+pub const PIECE_TS_OFFSET_MS: u64 = 1000;
 
 pub fn hls_args(job: &HlsJob) -> Vec<String> {
     let mut a: Vec<String> = Vec::new();
@@ -233,27 +244,38 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
     }
 
     let start_seconds = job.start_ms / 1000;
-    if job.keyframe_pieces && job.start_ms > 0 {
-        // Just past the keyframe: ffmpeg starts copying at the keyframe at
-        // or before -ss, and rounding must never land on the one before.
-        let at = job.start_ms + 1;
-        a.extend(["-ss".into(), format!("{}.{:03}", at / 1000, at % 1000)]);
-    } else if job.start_ms > 0 {
+    let millis = |ms: u64| format!("{}.{:03}", ms / 1000, ms % 1000);
+    let restarted_pieces = job.keyframe_pieces && job.start_segment > 0;
+    if restarted_pieces {
+        // Seek by the file's own timestamps (the keyframe index has those),
+        // whatever time the file starts at. Just past the keyframe: ffmpeg
+        // starts copying at the keyframe at or before -ss, and rounding must
+        // never land on the one before.
+        let at = job.start_ms + job.origin_ms + 1;
+        a.extend(["-seek_timestamp".into(), "1".into(), "-ss".into(), millis(at)]);
+    } else if !job.keyframe_pieces && job.start_ms > 0 {
         a.extend(["-ss".into(), start_seconds.to_string()]);
     }
     // Keep the source timestamps so every segment lines up with the playlist,
-    // no matter where ffmpeg was (re)started.
-    a.extend(["-copyts", "-start_at_zero", "-avoid_negative_ts", "disabled"].map(String::from));
+    // no matter where ffmpeg was (re)started. Pieces keep them exactly as
+    // they are in the file; the rest count from the start of the file.
+    a.extend(["-copyts".into()]);
+    if !job.keyframe_pieces {
+        a.push("-start_at_zero".into());
+    }
+    a.extend(["-avoid_negative_ts", "disabled"].map(String::from));
     a.extend(["-i".into(), job.input.to_string()]);
     // A restarted run's audio starts a little early, from a second copy of
     // the input. The run before it was stopped mid-way, so the audio just
     // before its last cut (muxed after that keyframe) never got written;
     // the overlap fills that gap and the browser drops the duplicate.
-    let audio_input = match (job.keyframe_pieces, job.plan.audio_index) {
-        (true, Some(_)) if job.start_ms > 0 => {
+    let audio_input = match job.plan.audio_index {
+        Some(_) if restarted_pieces => {
+            // Counted from the start of the file: that is how ffmpeg trims
+            // decoded audio to -ss, even when told to seek by timestamp.
             let at = job.start_ms.saturating_sub(AUDIO_PREROLL_MS);
             if at > 0 {
-                a.extend(["-ss".into(), format!("{}.{:03}", at / 1000, at % 1000)]);
+                a.extend(["-ss".into(), millis(at)]);
             }
             a.extend(["-i".into(), job.input.to_string()]);
             1
@@ -311,6 +333,12 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
     let dir = job.output_dir.trim_end_matches('/');
     // Pieces: a tiny target makes the HLS muxer cut at every keyframe.
     let hls_time = if job.keyframe_pieces { "0.1".to_string() } else { job.segment_seconds.to_string() };
+    if job.keyframe_pieces {
+        a.extend([
+            "-output_ts_offset".into(),
+            format!("{}.{:03}", PIECE_TS_OFFSET_MS / 1000, PIECE_TS_OFFSET_MS % 1000),
+        ]);
+    }
     a.extend(["-f".into(), "hls".into(), "-hls_time".into(), hls_time]);
     match job.plan.segments {
         SegmentFormat::MpegTs => a.extend(["-hls_segment_type", "mpegts"].map(String::from)),
@@ -322,8 +350,11 @@ pub fn hls_args(job: &HlsJob) -> Vec<String> {
             // Keep the source timestamps in every fragment (as -copyts does for
             // MPEG-TS), so segments from a restarted ffmpeg line up with the
             // playlist and the init segment is the same on every run.
+            // skip_sidx: with a segment index ffmpeg rewrites the time of each
+            // fragment's first frame to match the fragment before, which
+            // shows an open-GOP keyframe a few frames early.
             "-hls_segment_options".into(),
-            "movflags=+frag_discont".into(),
+            "movflags=+frag_discont+skip_sidx".into(),
         ]),
     }
     let (start_number, pattern, list_size) = if job.keyframe_pieces {
@@ -506,6 +537,7 @@ mod tests {
             segment_seconds: 6,
             start_segment: start,
             start_ms: u64::from(start) * 6000,
+            origin_ms: 0,
             keyframe_pieces: false,
             output_dir: "/tmp/t/abc",
         })
@@ -568,12 +600,19 @@ mod tests {
             segment_seconds: 6,
             start_segment: 114,
             start_ms: 684_084,
+            origin_ms: 3_200,
             keyframe_pieces: true,
             output_dir: "/tmp/s",
         })
         .join(" ");
         insta::assert_snapshot!(args);
-        assert!(args.contains("-ss 684.085 "), "{args}");
+        // The video seeks by the file's timestamps (3.2 s later), the audio by time from its start.
+        assert!(
+            args.contains("-seek_timestamp 1 -ss 687.285 -copyts -avoid_negative_ts disabled -i /m/a.mkv"),
+            "{args}"
+        );
+        assert!(args.contains("/m/a.mkv -ss 683.084 -i /m/a.mkv"), "{args}");
+        assert!(args.contains("-output_ts_offset 1.000 "), "{args}");
         assert!(args.contains("-hls_time 0.1 "), "{args}");
         assert!(args.contains("-start_number 0 -hls_segment_filename /tmp/s/gop_114_%d.m4s"), "{args}");
     }
@@ -649,6 +688,7 @@ mod tests {
             segment_seconds: 6,
             start_segment: 0,
             start_ms: 0,
+            origin_ms: 0,
             keyframe_pieces: false,
             output_dir: "/tmp/x",
         })

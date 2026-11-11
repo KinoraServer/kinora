@@ -38,11 +38,11 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile};
+use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile, PIECE_TS_OFFSET_MS};
 use kinora_core::fmp4::{first_video_time_ms, video_track, VideoTrack};
 use kinora_core::hls::{
-    complete_segments, parse_piece_name, run_init_name, segment_name, segments_to_delete, throttle, Piece, Throttle,
-    Timeline, INIT_NAME, SEGMENT_SECONDS,
+    complete_segments, parse_piece_name, run_init_name, segment_name, segments_to_delete, stray_pieces, throttle,
+    Piece, Throttle, Timeline, INIT_NAME, SEGMENT_SECONDS,
 };
 use kinora_core::playback::{PlaybackPlan, SegmentFormat, VideoAction};
 use serde::Serialize;
@@ -390,6 +390,7 @@ impl TranscodeManager {
             segment_seconds: SEGMENT_SECONDS,
             start_segment,
             start_ms: s.timeline.start_ms(start_segment),
+            origin_ms: s.timeline.origin_ms(),
             keyframe_pieces: s.timeline.keyframe_aligned(),
             output_dir: &output_dir,
         });
@@ -600,6 +601,7 @@ async fn assemble(s: &mut Session) {
             None => {
                 let Some(track) = run_track(s, run) else { continue };
                 let Some(t) = piece_start(&s.dir.join(&name), &track) else { continue };
+                let t = s.timeline.from_source_ms(t);
                 s.piece_starts.insert(name.clone(), t);
                 t
             }
@@ -609,6 +611,11 @@ async fn assemble(s: &mut Session) {
     if !s.init_ready && runs.contains(&current) {
         // ffmpeg writes the init segment before the first piece.
         install_init(s, current).await;
+    }
+    // The tail of the segment before the one this run was started for.
+    for name in stray_pieces(&s.timeline, &pieces, current) {
+        let _ = std::fs::remove_file(s.dir.join(&name));
+        s.piece_starts.remove(&name);
     }
     for (index, parts) in complete_segments(&s.timeline, &pieces, current, finished) {
         let target = s.dir.join(segment_name(index, SegmentFormat::Fmp4));
@@ -638,12 +645,13 @@ fn run_track(s: &mut Session, run: u32) -> Option<VideoTrack> {
     Some(track)
 }
 
-/// Start time of a piece, from the `moof` at its start (no need to read the media data).
+/// Start time of a piece in the source file, from the `moof` at its start (no need to read the media data).
 fn piece_start(path: &Path, track: &VideoTrack) -> Option<u64> {
     use std::io::Read;
     let mut head = Vec::new();
     std::fs::File::open(path).ok()?.take(256 * 1024).read_to_end(&mut head).ok()?;
-    first_video_time_ms(&head, track)
+    // Pieces are written a fixed offset later than the source (see `PIECE_TS_OFFSET_MS`).
+    first_video_time_ms(&head, track).map(|t| t.saturating_sub(PIECE_TS_OFFSET_MS))
 }
 
 fn join_pieces(dir: &Path, parts: &[String], target: &Path) -> std::io::Result<()> {

@@ -44,6 +44,9 @@ pub struct Timeline {
     starts_ms: Vec<u64>,
     duration_ms: u64,
     keyframes: bool,
+    /// Source timestamp of the first keyframe: playlist time 0. Files don't
+    /// always start at 0, and the playlist has to.
+    origin_ms: u64,
 }
 
 /// How close (ms) a piece's start must be to a segment boundary to count as
@@ -54,7 +57,7 @@ impl Timeline {
     pub fn fixed(duration_ms: u64, segment_seconds: u32) -> Self {
         let seg_ms = u64::from(segment_seconds) * 1000;
         let count = duration_ms.div_ceil(seg_ms).max(1);
-        Timeline { starts_ms: (0..count).map(|i| i * seg_ms).collect(), duration_ms, keyframes: false }
+        Timeline { starts_ms: (0..count).map(|i| i * seg_ms).collect(), duration_ms, keyframes: false, origin_ms: 0 }
     }
 
     /// Segments that start on keyframes, each at least `segment_seconds`
@@ -62,15 +65,27 @@ impl Timeline {
     pub fn from_keyframes(keyframes_ms: &[u64], duration_ms: u64, segment_seconds: u32) -> Option<Self> {
         let target = u64::from(segment_seconds) * 1000;
         let mut starts = vec![0u64];
-        let mut sorted: Vec<u64> = keyframes_ms.iter().copied().filter(|k| *k < duration_ms).collect();
+        let mut sorted: Vec<u64> = keyframes_ms.to_vec();
         sorted.sort_unstable();
-        for k in sorted {
+        let origin_ms = sorted.first().copied().unwrap_or(0);
+        for k in sorted.into_iter().map(|k| k - origin_ms).filter(|k| *k < duration_ms) {
             if k >= starts[starts.len() - 1] + target {
                 starts.push(k);
             }
         }
         // A single segment would mean the index is missing or useless.
-        (starts.len() > 1).then_some(Timeline { starts_ms: starts, duration_ms, keyframes: true })
+        (starts.len() > 1).then_some(Timeline { starts_ms: starts, duration_ms, keyframes: true, origin_ms })
+    }
+
+    /// Timestamp of the first keyframe in the source file (the playlist
+    /// starts at 0, the file might not).
+    pub fn origin_ms(&self) -> u64 {
+        self.origin_ms
+    }
+
+    /// Playlist time of a timestamp in the source file.
+    pub fn from_source_ms(&self, source_ms: u64) -> u64 {
+        source_ms.saturating_sub(self.origin_ms)
     }
 
     pub fn count(&self) -> u32 {
@@ -136,19 +151,40 @@ pub fn parse_piece_name(name: &str) -> Option<(u32, u32)> {
     Some((run.parse().ok()?, n.parse().ok()?))
 }
 
+/// Does this piece hold the keyframe a segment starts on?
+fn starts_segment(timeline: &Timeline, piece: &Piece) -> bool {
+    let start = timeline.start_ms(timeline.segment_at(piece.start_ms));
+    piece.start_ms.abs_diff(start) <= BOUNDARY_TOLERANCE_MS
+}
+
 /// Segments that one run's pieces now complete, with their pieces in order.
 /// A segment is complete once the run has a piece starting in a later
 /// segment, or the run reached the end of the file (`finished`).
+///
+/// Only whole segments count. ffmpeg starts a run on a keyframe at or before
+/// the one it was asked for, so a run's first pieces can be the tail of the
+/// segment before; joined on their own they would be a segment with its
+/// beginning missing (see `stray_pieces`).
 pub fn complete_segments(timeline: &Timeline, pieces: &[Piece], run: u32, finished: bool) -> Vec<(u32, Vec<String>)> {
     let mut mine: Vec<&Piece> = pieces.iter().filter(|p| p.run == run).collect();
     mine.sort_by_key(|p| p.start_ms);
     let Some(last) = mine.last() else { return Vec::new() };
     let last_segment = timeline.segment_at(last.start_ms);
     let mut out: Vec<(u32, Vec<String>)> = Vec::new();
+    // Segment of the piece before, and whether the run has that segment from its start.
+    let mut current: Option<(u32, bool)> = None;
     for p in &mine {
         let seg = timeline.segment_at(p.start_ms);
         if seg == last_segment && !finished {
             break;
+        }
+        let whole = match current {
+            Some((s, whole)) if s == seg => whole,
+            _ => starts_segment(timeline, p),
+        };
+        current = Some((seg, whole));
+        if !whole {
+            continue;
         }
         match out.last_mut() {
             Some((s, names)) if *s == seg => names.push(p.name.clone()),
@@ -156,6 +192,17 @@ pub fn complete_segments(timeline: &Timeline, pieces: &[Piece], run: u32, finish
         }
     }
     out
+}
+
+/// Pieces of a run that can never become a segment: the ones before the
+/// first segment the run has from its start. Safe to delete.
+pub fn stray_pieces(timeline: &Timeline, pieces: &[Piece], run: u32) -> Vec<String> {
+    let mut mine: Vec<&Piece> = pieces.iter().filter(|p| p.run == run).collect();
+    mine.sort_by_key(|p| p.start_ms);
+    match mine.iter().position(|p| starts_segment(timeline, p)) {
+        Some(first_whole) => mine[..first_whole].iter().map(|p| p.name.clone()).collect(),
+        None => Vec::new(),
+    }
 }
 
 /// ffmpeg is paused once it is this many segments ahead of the player
@@ -316,8 +363,20 @@ mod tests {
         assert_eq!(t.segment_at(6_000), 1, "a piece starting 6 ms early still starts segment 1");
         assert_eq!(t.segment_at(7_500), 1);
         assert_eq!(t.segment_at(12_011), 2);
+        assert_eq!(t.origin_ms(), 0);
         assert!(Timeline::from_keyframes(&[0], 60_000, 6).is_none());
         assert!(Timeline::from_keyframes(&[], 60_000, 6).is_none());
+    }
+
+    #[test]
+    fn a_file_that_does_not_start_at_zero_still_gets_a_playlist_from_zero() {
+        // The first keyframe is at 3.2 s in the file.
+        let kf: Vec<u64> = (0..30).map(|i| 3_200 + i * 2002).collect();
+        let t = Timeline::from_keyframes(&kf, 60_000, 6).unwrap();
+        assert_eq!(&t.starts_ms[..3], &[0, 6006, 12012]);
+        assert_eq!(t.origin_ms(), 3_200);
+        assert_eq!(t.from_source_ms(15_212), 12_012);
+        assert_eq!(t.segment_at(t.from_source_ms(9_206)), 1);
     }
 
     #[test]
@@ -356,8 +415,25 @@ mod tests {
         assert_eq!(done.len(), 2);
         assert_eq!(done[1], (2, vec!["gop_1_12000.m4s".into(), "gop_1_14000.m4s".into()]));
         assert!(complete_segments(&t, &pieces, 7, false).is_empty());
+        assert!(stray_pieces(&t, &pieces, 1).is_empty());
         assert_eq!(parse_piece_name("gop_12_3.m4s"), Some((12, 3)));
         assert_eq!(parse_piece_name("seg_3.m4s"), None);
+    }
+
+    #[test]
+    fn a_run_that_starts_inside_a_segment_does_not_make_that_segment() {
+        let t = Timeline::from_keyframes(&(0..20).map(|i| i * 2000).collect::<Vec<_>>(), 40_000, 6).unwrap();
+        let piece = |start_ms: u64| Piece { run: 2, start_ms, name: format!("gop_2_{start_ms}.m4s") };
+        // Asked for segment 2 (12 s); ffmpeg began one keyframe early, at 10 s (the end of segment 1).
+        let pieces = vec![piece(10_000), piece(12_004), piece(14_004), piece(16_004), piece(18_004)];
+        assert_eq!(
+            complete_segments(&t, &pieces, 2, false),
+            vec![(2, vec!["gop_2_12004.m4s".into(), "gop_2_14004.m4s".into(), "gop_2_16004.m4s".into()])]
+        );
+        assert_eq!(stray_pieces(&t, &pieces, 2), vec!["gop_2_10000.m4s".to_string()]);
+        // Nothing is thrown away before the run's first whole segment shows up.
+        assert!(stray_pieces(&t, &pieces[..1], 2).is_empty());
+        assert!(complete_segments(&t, &pieces[..1], 2, true).is_empty());
     }
 
     #[test]
