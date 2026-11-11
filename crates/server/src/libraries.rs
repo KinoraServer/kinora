@@ -1,6 +1,6 @@
 //! Library management (admin) and a folder picker for choosing paths.
 
-use std::path::PathBuf;
+use std::path::{Path as FsPath, PathBuf};
 
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
@@ -66,22 +66,104 @@ struct LibraryInput {
     paths: Vec<String>,
 }
 
-fn validate(input: &LibraryInput) -> AppResult<()> {
-    if input.name.trim().is_empty() {
+/// An edit. Every field is optional; send only what changes. `kind` may be
+/// sent (the admin UI sends the whole library) but can't change: the items
+/// of a movie library and a TV library are built differently.
+#[derive(Deserialize)]
+struct LibraryEdit {
+    name: Option<String>,
+    kind: Option<String>,
+    paths: Option<Vec<String>>,
+}
+
+/// Held while a library is added or edited, so two edits at once can't both
+/// pass the name and folder checks against the same old state.
+static EDITS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Trim a folder path and drop trailing slashes, so `/media/tv/` and
+/// `/media/tv` are the same folder.
+fn normalize_path(p: &str) -> String {
+    let p = p.trim();
+    let trimmed = p.trim_end_matches(['/', '\\']);
+    if trimmed.is_empty() || trimmed.ends_with(':') {
+        // "/" or a Windows drive root like `C:\`.
+        p.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// True when one folder is the other or sits inside it.
+fn overlaps(a: &str, b: &str) -> bool {
+    let (a, b) = (FsPath::new(a), FsPath::new(b));
+    a.starts_with(b) || b.starts_with(a)
+}
+
+async fn validate_name(state: &AppState, name: &str, except_id: Option<&str>) -> AppResult<String> {
+    let name = name.trim();
+    if name.is_empty() {
         return Err(AppError::BadRequest("give the library a name".into()));
     }
-    if input.kind != "movies" && input.kind != "tv" {
+    let taken: Option<String> =
+        sqlx::query_scalar("SELECT id FROM libraries WHERE name = ? COLLATE NOCASE AND id IS NOT ?")
+            .bind(name)
+            .bind(except_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if taken.is_some() {
+        return Err(AppError::Conflict(format!("there is already a library called {name}")));
+    }
+    Ok(name.to_string())
+}
+
+fn validate_kind(kind: &str) -> AppResult<()> {
+    if kind != "movies" && kind != "tv" {
         return Err(AppError::BadRequest("kind must be movies or tv".into()));
     }
-    if input.paths.is_empty() {
+    Ok(())
+}
+
+/// Check a library's folders and return them cleaned up. Each must exist and
+/// be readable, and no folder may be inside another, in this library or any
+/// other one: a file can only belong to one library.
+async fn validate_paths(state: &AppState, paths: &[String], except_id: Option<&str>) -> AppResult<Vec<String>> {
+    let mut clean: Vec<String> = Vec::new();
+    for p in paths.iter().map(|p| normalize_path(p)) {
+        if p.is_empty() || clean.contains(&p) {
+            continue;
+        }
+        clean.push(p);
+    }
+    if clean.is_empty() {
         return Err(AppError::BadRequest("add at least one folder".into()));
     }
-    for p in &input.paths {
-        if !PathBuf::from(p).is_dir() {
+    for p in &clean {
+        let path = PathBuf::from(p);
+        if !path.is_dir() {
             return Err(AppError::BadRequest(format!("folder not found: {p}")));
         }
+        if std::fs::read_dir(&path).is_err() {
+            return Err(AppError::BadRequest(format!("can't read folder: {p}")));
+        }
     }
-    Ok(())
+    for (i, a) in clean.iter().enumerate() {
+        if let Some(b) = clean[i + 1..].iter().find(|b| overlaps(a, b)) {
+            return Err(AppError::BadRequest(format!("{a} and {b} overlap; keep only the outer folder")));
+        }
+    }
+    let others: Vec<(String, String)> = sqlx::query_as("SELECT name, paths FROM libraries WHERE id IS NOT ?")
+        .bind(except_id)
+        .fetch_all(&state.db)
+        .await?;
+    for (name, other_paths) in others {
+        let other_paths: Vec<String> = serde_json::from_str(&other_paths).unwrap_or_default();
+        for p in &clean {
+            if let Some(o) = other_paths.iter().find(|o| overlaps(p, &normalize_path(o))) {
+                return Err(AppError::Conflict(format!("{p} overlaps {o}, which the library {name} already uses")));
+            }
+        }
+    }
+    Ok(clean)
 }
 
 async fn create(
@@ -89,13 +171,16 @@ async fn create(
     _admin: AdminUser,
     Json(input): Json<LibraryInput>,
 ) -> AppResult<Json<serde_json::Value>> {
-    validate(&input)?;
+    let _edit = EDITS.lock().await;
+    let name = validate_name(&state, &input.name, None).await?;
+    validate_kind(&input.kind)?;
+    let paths = validate_paths(&state, &input.paths, None).await?;
     let id = new_id();
     sqlx::query("INSERT INTO libraries (id, name, kind, paths, created_at) VALUES (?, ?, ?, ?, ?)")
         .bind(&id)
-        .bind(input.name.trim())
+        .bind(&name)
         .bind(&input.kind)
-        .bind(serde_json::to_string(&input.paths).map_err(anyhow::Error::from)?)
+        .bind(serde_json::to_string(&paths).map_err(anyhow::Error::from)?)
         .bind(now_ms())
         .execute(&state.db)
         .await?;
@@ -103,25 +188,44 @@ async fn create(
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
+/// Rename a library or change its folders. The id (and so every link to the
+/// library) stays the same. Changing folders starts a rescan: files in new
+/// folders are added, files no longer under any folder are removed, and
+/// files that merely moved keep their items and watch progress.
 async fn update(
     State(state): State<AppState>,
     _admin: AdminUser,
     Path(id): Path<String>,
-    Json(input): Json<LibraryInput>,
+    Json(input): Json<LibraryEdit>,
 ) -> AppResult<Json<serde_json::Value>> {
-    validate(&input)?;
-    let res = sqlx::query("UPDATE libraries SET name = ?, kind = ?, paths = ? WHERE id = ?")
-        .bind(input.name.trim())
-        .bind(&input.kind)
-        .bind(serde_json::to_string(&input.paths).map_err(anyhow::Error::from)?)
+    let _edit = EDITS.lock().await;
+    let (old_name, kind, old_paths): (String, String, String) =
+        sqlx::query_as("SELECT name, kind, paths FROM libraries WHERE id = ?").bind(&id).fetch_one(&state.db).await?;
+    if input.kind.as_ref().is_some_and(|k| *k != kind) {
+        return Err(AppError::BadRequest(
+            "a library's type can't be changed; add a new library for the other type".into(),
+        ));
+    }
+    let name = match &input.name {
+        Some(n) => validate_name(&state, n, Some(&id)).await?,
+        None => old_name,
+    };
+    let old_paths: Vec<String> = serde_json::from_str(&old_paths).unwrap_or_default();
+    let paths = match &input.paths {
+        Some(p) => validate_paths(&state, p, Some(&id)).await?,
+        None => old_paths.clone(),
+    };
+    sqlx::query("UPDATE libraries SET name = ?, paths = ? WHERE id = ?")
+        .bind(&name)
+        .bind(serde_json::to_string(&paths).map_err(anyhow::Error::from)?)
         .bind(&id)
         .execute(&state.db)
         .await?;
-    if res.rows_affected() == 0 {
-        return Err(AppError::NotFound);
+    let rescan = paths != old_paths;
+    if rescan {
+        scanner::rescan_after_change(&state, &id).await;
     }
-    scanner::start_scan(&state, &id).await;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(serde_json::json!({ "ok": true, "rescan": rescan })))
 }
 
 async fn remove(
@@ -131,6 +235,7 @@ async fn remove(
 ) -> AppResult<Json<serde_json::Value>> {
     // Media files on disk are never touched; only our records are removed.
     sqlx::query("DELETE FROM libraries WHERE id = ?").bind(&id).execute(&state.db).await?;
+    state.scans.forget(&id).await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -177,4 +282,27 @@ async fn folders(_admin: AdminUser, Query(q): Query<FolderQuery>) -> AppResult<J
         path: path.display().to_string(),
         folders,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paths_are_normalized() {
+        assert_eq!(normalize_path(" /media/tv/ "), "/media/tv");
+        assert_eq!(normalize_path("/media/tv//"), "/media/tv");
+        assert_eq!(normalize_path("/"), "/");
+        assert_eq!(normalize_path(r"C:\"), r"C:\");
+    }
+
+    #[test]
+    fn overlapping_folders() {
+        assert!(overlaps("/media", "/media/tv"));
+        assert!(overlaps("/media/tv", "/media"));
+        assert!(overlaps("/media/tv", "/media/tv"));
+        // A shared prefix isn't nesting.
+        assert!(!overlaps("/media/tv", "/media/tv-4k"));
+        assert!(!overlaps("/media/movies", "/media/tv"));
+    }
 }

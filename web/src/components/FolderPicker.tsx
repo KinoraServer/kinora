@@ -12,10 +12,13 @@ interface FolderList {
   folders: string[];
 }
 
-/** Browse folders on the server (inside Docker: the container's view, usually /media). */
-export function FolderPicker({ onPick }: { onPick: (path: string) => void }) {
+/**
+ * Browse folders on the server (inside Docker: the container's view, usually /media).
+ * Starts at `initialPath`, or the server's default (/media when it exists).
+ */
+export function FolderPicker({ onPick, initialPath = "" }: { onPick: (path: string) => void; initialPath?: string }) {
   const { t } = useTranslation();
-  const [path, setPath] = useState("");
+  const [path, setPath] = useState(initialPath);
   const { data, error, loading } = useApi<FolderList>(`api/fs/folders?path=${encodeURIComponent(path)}`);
   const join = (base: string, name: string) =>
     base.endsWith("/") || base.endsWith("\\") ? base + name : `${base}/${name}`;

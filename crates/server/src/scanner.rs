@@ -3,6 +3,11 @@
 //!
 //! Incremental: a file whose size and modification time haven't changed is
 //! skipped, so a rescan of a big library takes seconds.
+//!
+//! Moved files: a file that vanished from one place and turned up in another
+//! (same file name and size) keeps its record, so its item, metadata and
+//! everyone's watch progress follow it. This is what makes changing a
+//! library's folders, or reorganising files on disk, safe.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -38,6 +43,9 @@ pub struct ScanStatus {
 #[derive(Clone, Default)]
 pub struct ScanManager {
     status: Arc<RwLock<HashMap<String, ScanStatus>>>,
+    /// Libraries whose folders changed while a scan was running: they are
+    /// scanned again as soon as that scan finishes.
+    rerun: Arc<std::sync::Mutex<HashSet<String>>>,
 }
 
 impl ScanManager {
@@ -52,6 +60,28 @@ impl ScanManager {
 
     async fn is_running(&self, library_id: &str) -> bool {
         self.status.read().await.get(library_id).map(|s| s.running).unwrap_or(false)
+    }
+
+    fn take_rerun(&self, library_id: &str) -> bool {
+        self.rerun.lock().map(|mut set| set.remove(library_id)).unwrap_or(false)
+    }
+
+    /// Forget a deleted library's status.
+    pub async fn forget(&self, library_id: &str) {
+        self.status.write().await.remove(library_id);
+        if let Ok(mut set) = self.rerun.lock() {
+            set.remove(library_id);
+        }
+    }
+}
+
+/// Scan a library whose settings just changed. If a scan is already running
+/// it read the old folders, so another one runs right after it.
+pub async fn rescan_after_change(state: &AppState, library_id: &str) {
+    if !start_scan(state, library_id).await {
+        if let Ok(mut set) = state.scans.rerun.lock() {
+            set.insert(library_id.to_string());
+        }
     }
 }
 
@@ -76,36 +106,57 @@ pub async fn start_scan(state: &AppState, library_id: &str) -> bool {
     let state = state.clone();
     let id = library_id.to_string();
     tokio::spawn(async move {
-        state.emit(ServerEvent::LibraryScanStarted { library_id: id.clone() });
-        let result = scan_library(&state, &id).await;
-        let (added, removed) = match &result {
-            Ok(counts) => *counts,
-            Err(_) => (0, 0),
-        };
-        state
-            .scans
-            .update(&id, |s| {
-                s.running = false;
-                s.phase = if result.is_ok() { "done".into() } else { "failed".into() };
-                s.finished_at = Some(now_ms());
-                if let Err(e) = &result {
-                    s.last_error = Some(e.to_string());
-                }
-            })
-            .await;
-        match result {
-            Ok(_) => {
-                let _ = sqlx::query("UPDATE libraries SET last_scan_at = ? WHERE id = ?")
-                    .bind(now_ms())
-                    .bind(&id)
-                    .execute(&state.db)
-                    .await;
-                state.emit(ServerEvent::LibraryScanFinished { library_id: id, added, removed });
-            }
-            Err(e) => tracing::error!(library = %id, error = ?e, "scan failed"),
+        run_scan(&state, &id).await;
+        while state.scans.take_rerun(&id) {
+            state
+                .scans
+                .update(&id, |s| {
+                    *s = ScanStatus {
+                        running: true,
+                        phase: "starting".into(),
+                        started_at: Some(now_ms()),
+                        ..Default::default()
+                    }
+                })
+                .await;
+            run_scan(&state, &id).await;
         }
     });
     true
+}
+
+/// One scan, start to finish, with its status and events. The caller has
+/// already marked the library as scanning.
+async fn run_scan(state: &AppState, id: &str) {
+    let id = id.to_string();
+    state.emit(ServerEvent::LibraryScanStarted { library_id: id.clone() });
+    let result = scan_library(state, &id).await;
+    let (added, removed) = match &result {
+        Ok(counts) => *counts,
+        Err(_) => (0, 0),
+    };
+    state
+        .scans
+        .update(&id, |s| {
+            s.running = false;
+            s.phase = if result.is_ok() { "done".into() } else { "failed".into() };
+            s.finished_at = Some(now_ms());
+            if let Err(e) = &result {
+                s.last_error = Some(e.to_string());
+            }
+        })
+        .await;
+    match result {
+        Ok(_) => {
+            let _ = sqlx::query("UPDATE libraries SET last_scan_at = ? WHERE id = ?")
+                .bind(now_ms())
+                .bind(&id)
+                .execute(&state.db)
+                .await;
+            state.emit(ServerEvent::LibraryScanFinished { library_id: id, added, removed });
+        }
+        Err(e) => tracing::error!(library = %id, error = ?e, "scan failed"),
+    }
 }
 
 pub async fn scan_all(state: &AppState) {
@@ -167,10 +218,14 @@ async fn scan_library(state: &AppState, library_id: &str) -> anyhow::Result<(u32
             .bind(library_id)
             .fetch_all(&state.db)
             .await?;
-    let existing: HashMap<String, (String, i64, i64)> =
+    let mut existing: HashMap<String, (String, i64, i64)> =
         existing.into_iter().map(|(id, path, size, mtime)| (path, (id, size, mtime))).collect();
 
     let seen: HashSet<String> = found.iter().map(|f| f.path.display().to_string()).collect();
+    let moved = relink_moved_files(&state.db, &found, &seen, &mut existing).await?;
+    if moved > 0 {
+        tracing::info!(library = library_id, files = moved, "kept the records of moved files");
+    }
     let changed: Vec<Found> = found
         .into_iter()
         .filter(|f| match existing.get(&f.path.display().to_string()) {
@@ -265,6 +320,74 @@ async fn scan_library(state: &AppState, library_id: &str) -> anyhow::Result<(u32
         })
         .await;
     Ok((added, removed))
+}
+
+/// Find files that moved: a known file that is gone, and a new file with the
+/// same file name and size. Only one-to-one matches count, so two copies of
+/// `Episode 1.mkv` are never mixed up. The file's record (and with it the
+/// item, metadata and watch progress) gets the new path, and `existing` is
+/// updated so the rest of the scan treats it as a known, unchanged file.
+async fn relink_moved_files(
+    db: &SqlitePool,
+    found: &[Found],
+    seen: &HashSet<String>,
+    existing: &mut HashMap<String, (String, i64, i64)>,
+) -> anyhow::Result<u32> {
+    type Key = (String, i64);
+    fn key(path: &str, size: i64) -> Option<Key> {
+        Path::new(path).file_name().map(|n| (n.to_string_lossy().to_string(), size))
+    }
+
+    let mut gone: HashMap<Key, Vec<String>> = HashMap::new();
+    for (path, (_, size, _)) in existing.iter() {
+        if !seen.contains(path) {
+            if let Some(k) = key(path, *size) {
+                gone.entry(k).or_default().push(path.clone());
+            }
+        }
+    }
+    if gone.is_empty() {
+        return Ok(0);
+    }
+    let mut arrived: HashMap<Key, Vec<&Found>> = HashMap::new();
+    for f in found {
+        let path = f.path.display().to_string();
+        if !existing.contains_key(&path) {
+            if let Some(k) = key(&path, f.size) {
+                arrived.entry(k).or_default().push(f);
+            }
+        }
+    }
+
+    let mut moved = 0;
+    for (k, old_paths) in gone {
+        let (Some(new_files), [old_path]) = (arrived.get(&k), old_paths.as_slice()) else { continue };
+        let [new_file] = new_files.as_slice() else { continue };
+        let new_path = new_file.path.display().to_string();
+        let Some((file_id, _, _)) = existing.remove(old_path) else { continue };
+
+        let mut tx = db.begin().await?;
+        sqlx::query("UPDATE media_files SET path = ?, mtime = ?, scanned_at = ? WHERE id = ?")
+            .bind(&new_path)
+            .bind(new_file.mtime)
+            .bind(now_ms())
+            .bind(&file_id)
+            .execute(&mut *tx)
+            .await?;
+        // A movie's match key is its path; episodes are matched by show,
+        // season and number, so theirs don't change.
+        sqlx::query("UPDATE items SET match_key = ? WHERE match_key = ? AND id = (SELECT item_id FROM media_files WHERE id = ?)")
+            .bind(format!("movie:{new_path}"))
+            .bind(format!("movie:{old_path}"))
+            .bind(&file_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+
+        existing.insert(new_path, (file_id, new_file.size, new_file.mtime));
+        moved += 1;
+    }
+    Ok(moved)
 }
 
 /// Sort titles ignore a leading "The", "A" or "An".
@@ -684,5 +807,109 @@ mod tests {
         assert_eq!((title.as_str(), year), ("Inception", Some(2010)));
         let files: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_files").fetch_one(&db).await.unwrap();
         assert_eq!(files, 1);
+    }
+
+    async fn known_files(db: &SqlitePool, lib: &str) -> HashMap<String, (String, i64, i64)> {
+        sqlx::query_as::<_, (String, String, i64, i64)>(
+            "SELECT id, path, size, mtime FROM media_files WHERE library_id = ?",
+        )
+        .bind(lib)
+        .fetch_all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(id, path, size, mtime)| (path, (id, size, mtime)))
+        .collect()
+    }
+
+    async fn add_user_with_progress(db: &SqlitePool, item_id: &str) {
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES ('u', 'u', 'x', 'owner', 0)",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO user_item_data (user_id, item_id, position_ms) VALUES ('u', ?, 60000)")
+            .bind(item_id)
+            .execute(db)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_moved_movie_keeps_its_item_and_progress() {
+        let db = crate::db::connect_memory().await;
+        let lib = library(&db, "movies").await;
+        let old = found("/old", "Inception (2010)/Inception (2010).mkv");
+        upsert_file(&db, &lib, "movies", &old, &info()).await.unwrap();
+        let item_id: String = sqlx::query_scalar("SELECT id FROM items").fetch_one(&db).await.unwrap();
+        add_user_with_progress(&db, &item_id).await;
+
+        // The library's folder changed from /old to /new.
+        let now = vec![found("/new", "Inception (2010)/Inception (2010).mkv")];
+        let seen: HashSet<String> = now.iter().map(|f| f.path.display().to_string()).collect();
+        let mut existing = known_files(&db, &lib).await;
+        let moved = relink_moved_files(&db, &now, &seen, &mut existing).await.unwrap();
+        assert_eq!(moved, 1);
+        assert!(existing.contains_key("/new/Inception (2010)/Inception (2010).mkv"));
+        assert!(!existing.contains_key("/old/Inception (2010)/Inception (2010).mkv"));
+
+        // Same file record, same item, new match key; nothing left to clean up.
+        let (path, file_item): (String, String) =
+            sqlx::query_as("SELECT path, item_id FROM media_files").fetch_one(&db).await.unwrap();
+        assert_eq!(path, "/new/Inception (2010)/Inception (2010).mkv");
+        assert_eq!(file_item, item_id);
+        let key: String = sqlx::query_scalar("SELECT match_key FROM items").fetch_one(&db).await.unwrap();
+        assert_eq!(key, "movie:/new/Inception (2010)/Inception (2010).mkv");
+        remove_orphans(&db, &lib).await.unwrap();
+        let position: i64 = sqlx::query_scalar("SELECT position_ms FROM user_item_data").fetch_one(&db).await.unwrap();
+        assert_eq!(position, 60000);
+
+        // A rescan of the new folder now finds the known file again.
+        let second = upsert_file(&db, &lib, "movies", &now[0], &info()).await.unwrap();
+        assert!(second.is_none(), "no duplicate item");
+    }
+
+    #[tokio::test]
+    async fn moves_need_a_unique_match() {
+        let db = crate::db::connect_memory().await;
+        let lib = library(&db, "tv").await;
+        for root in ["/a", "/b"] {
+            upsert_file(&db, &lib, "tv", &found(root, "Show/Show - S01E01.mkv"), &info()).await.unwrap();
+        }
+        // Both copies vanish and one file with the same name and size appears:
+        // which one moved is a guess, so neither is relinked.
+        let now = vec![found("/c", "Show/Show - S01E01.mkv")];
+        let seen: HashSet<String> = now.iter().map(|f| f.path.display().to_string()).collect();
+        let mut existing = known_files(&db, &lib).await;
+        assert_eq!(relink_moved_files(&db, &now, &seen, &mut existing).await.unwrap(), 0);
+
+        // A different size is a different file.
+        let mut bigger = found("/c", "Show/Show - S01E02.mkv");
+        bigger.size = 2;
+        upsert_file(&db, &lib, "tv", &found("/a", "Show/Show - S01E02.mkv"), &info()).await.unwrap();
+        let now = vec![bigger];
+        let seen: HashSet<String> = now.iter().map(|f| f.path.display().to_string()).collect();
+        let mut existing = known_files(&db, &lib).await;
+        assert_eq!(relink_moved_files(&db, &now, &seen, &mut existing).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_moved_episode_keeps_its_file_record() {
+        let db = crate::db::connect_memory().await;
+        let lib = library(&db, "tv").await;
+        upsert_file(&db, &lib, "tv", &found("/tv", "Show/Season 01/Show - S01E01.mkv"), &info()).await.unwrap();
+        let file_id: String = sqlx::query_scalar("SELECT id FROM media_files").fetch_one(&db).await.unwrap();
+
+        let now = vec![found("/anime", "Show/Season 01/Show - S01E01.mkv")];
+        let seen: HashSet<String> = now.iter().map(|f| f.path.display().to_string()).collect();
+        let mut existing = known_files(&db, &lib).await;
+        assert_eq!(relink_moved_files(&db, &now, &seen, &mut existing).await.unwrap(), 1);
+        let (id, path): (String, String) =
+            sqlx::query_as("SELECT id, path FROM media_files").fetch_one(&db).await.unwrap();
+        assert_eq!((id, path.as_str()), (file_id, "/anime/Show/Season 01/Show - S01E01.mkv"));
+        let key: String =
+            sqlx::query_scalar("SELECT match_key FROM items WHERE kind = 'episode'").fetch_one(&db).await.unwrap();
+        assert!(key.starts_with("episode:"), "episode keys don't hold paths: {key}");
     }
 }

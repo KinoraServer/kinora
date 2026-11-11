@@ -352,10 +352,16 @@
       "scan": "Scan",
       "remove": "Remove {{name}}",
       "remove_confirm": "Remove \"{{name}}\"? Your files are not touched, only Kinora's records.",
+      "edit": "Edit {{name}}",
+      "kind_fixed": "The type can't be changed. Add a new library for the other type.",
       "name_placeholder": "Movies",
       "folders": "Folders",
       "folders_help": "Pick one or more folders. Sub-folders are included.",
-      "add_and_scan": "Add and scan"
+      "folders_changed": "Kinora will rescan this library after saving.",
+      "folders_removed_one": "Kinora will rescan this library after saving. Titles only found in the removed folder will leave the library. Files you moved into one of its other folders keep their details and watch progress.",
+      "folders_removed_other": "Kinora will rescan this library after saving. Titles only found in the {{count}} removed folders will leave the library. Files you moved into one of its other folders keep their details and watch progress.",
+      "add_and_scan": "Add and scan",
+      "save_and_scan": "Save and scan"
     },
     "users": {
       "title": "Users",
