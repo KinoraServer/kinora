@@ -1,0 +1,60 @@
+# Free linters that keep the code clean, run on every push and pull request.
+# Each job fails only on errors; warnings show up as annotations on the pull
+# request. How to run them locally: docs/code-quality.md.
+name: Static analysis
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Oxlint: bug-prone patterns, React hook rules and accessibility in web/.
+  # Knip: unused files and dependencies in web/ (unused exports are only reported).
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint --format github
+      - run: pnpm knip
+
+  # cargo-deny: known vulnerabilities (RustSec), licences, banned or
+  # duplicated crates and crate sources. Rules: deny.toml.
+  rust-deps:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  # Workflows (actionlint), shell scripts (ShellCheck) and the Dockerfile (Hadolint).
+  repo:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+      - name: ShellCheck
+        # Preinstalled on GitHub's Ubuntu runners.
+        run: |
+          git ls-files -z '*.sh' | xargs -0 shellcheck --severity=warning
+          shellcheck --shell=sh --severity=warning .husky/pre-commit .husky/commit-msg
+      - uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: Dockerfile
+          config: .hadolint.yaml
