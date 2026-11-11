@@ -30,7 +30,7 @@ jobs:
         if: env.SONAR_TOKEN == ''
         run: echo "::notice::SONAR_TOKEN is not set (or this is a pull request from a fork), so the SonarQube scan is skipped. See docs/code-quality.md."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.SONAR_TOKEN != ''
         with:
           # Full history, so SonarQube can tell new code from old and blame lines.
@@ -55,9 +55,9 @@ jobs:
         run: cargo llvm-cov --workspace --lcov --output-path rust-lcov.info
 
       # Web: unit test coverage (the Storybook browser tests run in the CI workflow).
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: env.SONAR_TOKEN != ''
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: env.SONAR_TOKEN != ''
         with:
           node-version: 22
