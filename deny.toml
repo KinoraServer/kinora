@@ -1,0 +1,48 @@
+# cargo-deny settings (run in .github/workflows/static-analysis.yml,
+# locally with `cargo deny check`). Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+# Fail on any RustSec vulnerability or unmaintained/unsound crate notice.
+# To accept one deliberately, add its ID here with a reason:
+# ignore = [{ id = "RUSTSEC-0000-0000", reason = "..." }]
+ignore = [
+  # SQLite < 3.54 in libsqlite3-sys 0.30 (pulled in by sqlx 0.8). Only exploitable
+  # with a database and -wal file written by someone else; Kinora only opens its
+  # own database in /config. Remove once sqlx ships libsqlite3-sys >= 0.39.
+  { id = "RUSTSEC-2026-0459", reason = "local-only, Kinora opens only its own database; waiting on sqlx" },
+]
+
+[licenses]
+# Licences of the crates in Cargo.lock today. A new dependency under any
+# other licence fails the check, so it gets a conscious look first.
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  # Kinora's own crates.
+  "GPL-2.0-only",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Two versions of one crate is common in Rust and not worth failing over,
+# but it's shown so it can be cleaned up.
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace crates depend on each other by path.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

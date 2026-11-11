@@ -1,0 +1,8 @@
+# Hadolint settings for the Dockerfile (run in .github/workflows/static-analysis.yml).
+failure-threshold: warning
+ignored:
+  # Debian's apt only keeps the current version of each package, so pinned
+  # versions break the build on the next security update.
+  - DL3008
+  # The HEALTHCHECK needs a shell to expand ${KINORA_PORT}.
+  - DL3025

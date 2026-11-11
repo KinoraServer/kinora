@@ -9,3 +9,6 @@ node_modules
 /web/.vitest
 # Linux screenshots come from CI (web-screenshots artifact); commit your own OS's baselines.
 /web/src/**/__screenshots__/**/*-linux.png
+# Reports made for SonarQube (see docs/code-quality.md).
+/clippy-report.json
+/rust-lcov.info
