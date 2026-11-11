@@ -222,6 +222,8 @@ async fn viewers_cannot_do_admin_things() {
         .call("POST", "/api/libraries", Some(json!({"name": "M", "kind": "movies", "paths": ["/"]})), Some(&viewer))
         .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("PUT", "/api/libraries/any", Some(json!({"name": "Mine"})), Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 
     // But they can browse.
     let (s, _) = t.call("GET", "/api/home", None, Some(&viewer)).await;
@@ -309,6 +311,93 @@ async fn library_needs_existing_folder() {
         .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("folder not found"));
+}
+
+#[tokio::test]
+async fn editing_a_library() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let media = tempfile::tempdir().unwrap();
+    let dir = |name: &str| {
+        let p = media.path().join(name);
+        std::fs::create_dir_all(&p).unwrap();
+        p.display().to_string()
+    };
+    let (movies, movies_4k, tv, anime) = (dir("movies"), dir("movies-4k"), dir("tv"), dir("anime"));
+
+    let (s, body) = t
+        .call(
+            "POST",
+            "/api/libraries",
+            Some(json!({"name": "Movies", "kind": "movies", "paths": [movies]})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let id = body["id"].as_str().unwrap().to_string();
+    let (s, body) =
+        t.call("POST", "/api/libraries", Some(json!({"name": "TV", "kind": "tv", "paths": [tv]})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let uri = format!("/api/libraries/{id}");
+
+    // Rename only: same id, folders kept, no rescan.
+    let (s, body) = t.call("PUT", &uri, Some(json!({"name": "Films"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["rescan"], false);
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!(lib["name"], "Films");
+    assert_eq!(lib["paths"], json!([movies]));
+
+    // Add a folder (with a trailing slash and a duplicate): cleaned up and rescanned.
+    let (s, body) = t
+        .call(
+            "PUT",
+            &uri,
+            Some(json!({"name": "Films", "kind": "movies", "paths": [movies, format!("{movies_4k}/"), movies_4k]})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["rescan"], true);
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!(lib["paths"], json!([movies, movies_4k]));
+
+    // Remove one again.
+    let (s, body) = t.call("PUT", &uri, Some(json!({"paths": [movies_4k]})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!(lib["paths"], json!([movies_4k]));
+
+    let rejected: [(Value, StatusCode, &str); 7] = [
+        (json!({"name": "tv"}), StatusCode::CONFLICT, "already a library called"),
+        (json!({"name": "  "}), StatusCode::BAD_REQUEST, "name"),
+        (json!({"kind": "tv"}), StatusCode::BAD_REQUEST, "can't be changed"),
+        (json!({"paths": []}), StatusCode::BAD_REQUEST, "at least one folder"),
+        (json!({"paths": ["/definitely/not/here"]}), StatusCode::BAD_REQUEST, "folder not found"),
+        (json!({"paths": [media.path(), movies]}), StatusCode::BAD_REQUEST, "overlap"),
+        (json!({"paths": [movies, anime, tv]}), StatusCode::CONFLICT, "the library TV already uses"),
+    ];
+    for (edit, status, message) in rejected {
+        let (s, body) = t.call("PUT", &uri, Some(edit.clone()), Some(&owner)).await;
+        assert_eq!(s, status, "{edit} -> {body}");
+        assert!(body["error"].as_str().unwrap().contains(message), "{edit} -> {body}");
+    }
+    // Nothing changed after the rejected edits.
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!((&lib["name"], &lib["paths"]), (&json!("Films"), &json!([movies_4k])));
+
+    // A library can't be created on another library's folder either.
+    let (s, _) = t
+        .call("POST", "/api/libraries", Some(json!({"name": "Shows", "kind": "tv", "paths": [tv]})), Some(&owner))
+        .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+
+    let (s, _) = t.call("PUT", "/api/libraries/nope", Some(json!({"name": "X"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
 }
 
 /// A show with two episodes laid out like the 86 Eighty Six release: English
