@@ -98,6 +98,8 @@ jobs:
       - name: Create multi-arch manifest
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # Word splitting is wanted here: each tag and digest becomes its own argument.
+          # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "${IMAGE}@sha256:%s " *)
       - name: Show image
