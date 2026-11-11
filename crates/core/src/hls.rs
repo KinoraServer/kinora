@@ -13,16 +13,6 @@ use crate::playback::SegmentFormat;
 /// Length of every segment except the last.
 pub const SEGMENT_SECONDS: u32 = 6;
 
-pub fn segment_count(duration_ms: u64, segment_seconds: u32) -> u32 {
-    let seg_ms = u64::from(segment_seconds) * 1000;
-    duration_ms.div_ceil(seg_ms).max(1) as u32
-}
-
-/// Segment that contains `position_ms`.
-pub fn segment_for_position(position_ms: u64, segment_seconds: u32) -> u32 {
-    (position_ms / (u64::from(segment_seconds) * 1000)) as u32
-}
-
 /// The fMP4 init segment the player is given.
 pub const INIT_NAME: &str = "init.mp4";
 
@@ -45,25 +35,174 @@ pub fn parse_segment_name(name: &str) -> Option<u32> {
     rest.strip_suffix(".ts").or_else(|| rest.strip_suffix(".m4s"))?.parse().ok()
 }
 
-pub fn vod_playlist(duration_ms: u64, segment_seconds: u32, format: SegmentFormat) -> String {
-    let count = segment_count(duration_ms, segment_seconds);
-    let seg_ms = u64::from(segment_seconds) * 1000;
-    let mut out = String::new();
-    // fMP4 segments need playlist version 7 (EXT-X-MAP outside I-frame playlists).
-    let version = if format == SegmentFormat::Fmp4 { 7 } else { 3 };
-    out.push_str(&format!("#EXTM3U\n#EXT-X-VERSION:{version}\n"));
-    out.push_str(&format!("#EXT-X-TARGETDURATION:{segment_seconds}\n"));
-    out.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n");
-    if format == SegmentFormat::Fmp4 {
-        out.push_str(&format!("#EXT-X-MAP:URI=\"{INIT_NAME}\"\n"));
+/// Where every segment starts. Encodes use fixed 6 s segments (ffmpeg
+/// places a keyframe at each boundary). Copied video can only be cut at its
+/// own keyframes, so its segments start on the source's keyframes, about
+/// 6 s apart, taken from the file's index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Timeline {
+    starts_ms: Vec<u64>,
+    duration_ms: u64,
+    keyframes: bool,
+    /// Source timestamp of the first keyframe: playlist time 0. Files don't
+    /// always start at 0, and the playlist has to.
+    origin_ms: u64,
+}
+
+/// How close (ms) a piece's start must be to a segment boundary to count as
+/// starting that segment: covers rounding between container time bases.
+const BOUNDARY_TOLERANCE_MS: u64 = 20;
+
+impl Timeline {
+    pub fn fixed(duration_ms: u64, segment_seconds: u32) -> Self {
+        let seg_ms = u64::from(segment_seconds) * 1000;
+        let count = duration_ms.div_ceil(seg_ms).max(1);
+        Timeline { starts_ms: (0..count).map(|i| i * seg_ms).collect(), duration_ms, keyframes: false, origin_ms: 0 }
     }
-    for i in 0..count {
-        let start = u64::from(i) * seg_ms;
-        let len_ms = (duration_ms.saturating_sub(start)).min(seg_ms).max(1);
-        out.push_str(&format!("#EXTINF:{:.3},\n{}\n", len_ms as f64 / 1000.0, segment_name(i, format)));
+
+    /// Segments that start on keyframes, each at least `segment_seconds`
+    /// long (except the last). `None` without keyframes to go on.
+    pub fn from_keyframes(keyframes_ms: &[u64], duration_ms: u64, segment_seconds: u32) -> Option<Self> {
+        let target = u64::from(segment_seconds) * 1000;
+        let mut starts = vec![0u64];
+        let mut sorted: Vec<u64> = keyframes_ms.to_vec();
+        sorted.sort_unstable();
+        let origin_ms = sorted.first().copied().unwrap_or(0);
+        for k in sorted.into_iter().map(|k| k - origin_ms).filter(|k| *k < duration_ms) {
+            if k >= starts[starts.len() - 1] + target {
+                starts.push(k);
+            }
+        }
+        // A single segment would mean the index is missing or useless.
+        (starts.len() > 1).then_some(Timeline { starts_ms: starts, duration_ms, keyframes: true, origin_ms })
     }
-    out.push_str("#EXT-X-ENDLIST\n");
+
+    /// Timestamp of the first keyframe in the source file (the playlist
+    /// starts at 0, the file might not).
+    pub fn origin_ms(&self) -> u64 {
+        self.origin_ms
+    }
+
+    /// Playlist time of a timestamp in the source file.
+    pub fn from_source_ms(&self, source_ms: u64) -> u64 {
+        source_ms.saturating_sub(self.origin_ms)
+    }
+
+    pub fn count(&self) -> u32 {
+        self.starts_ms.len() as u32
+    }
+
+    /// Segments start on the source's keyframes (copied video).
+    pub fn keyframe_aligned(&self) -> bool {
+        self.keyframes
+    }
+
+    pub fn start_ms(&self, index: u32) -> u64 {
+        self.starts_ms.get(index as usize).copied().unwrap_or(self.duration_ms)
+    }
+
+    pub fn end_ms(&self, index: u32) -> u64 {
+        self.starts_ms.get(index as usize + 1).copied().unwrap_or(self.duration_ms).max(self.start_ms(index))
+    }
+
+    /// Segment that `time_ms` falls in (a time a few ms before a boundary counts as that boundary).
+    pub fn segment_at(&self, time_ms: u64) -> u32 {
+        let t = time_ms + BOUNDARY_TOLERANCE_MS;
+        (self.starts_ms.partition_point(|s| *s <= t).max(1) - 1) as u32
+    }
+
+    /// The whole VOD playlist.
+    pub fn playlist(&self, format: SegmentFormat) -> String {
+        let longest = (0..self.count()).map(|i| self.end_ms(i) - self.start_ms(i)).max().unwrap_or(0);
+        let mut out = String::new();
+        // fMP4 segments need playlist version 7 (EXT-X-MAP outside I-frame playlists).
+        let version = if format == SegmentFormat::Fmp4 { 7 } else { 3 };
+        out.push_str(&format!("#EXTM3U\n#EXT-X-VERSION:{version}\n"));
+        out.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", longest.div_ceil(1000).max(1)));
+        out.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n");
+        if format == SegmentFormat::Fmp4 {
+            out.push_str(&format!("#EXT-X-MAP:URI=\"{INIT_NAME}\"\n"));
+        }
+        for i in 0..self.count() {
+            let len_ms = (self.end_ms(i) - self.start_ms(i)).max(1);
+            out.push_str(&format!("#EXTINF:{:.3},\n{}\n", len_ms as f64 / 1000.0, segment_name(i, format)));
+        }
+        out.push_str("#EXT-X-ENDLIST\n");
+        out
+    }
+}
+
+/// One piece ffmpeg wrote when cutting copied video at every keyframe:
+/// `gop_<run>_<n>.m4s`, where `run` is the segment that ffmpeg run started at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Piece {
+    pub run: u32,
+    pub start_ms: u64,
+    pub name: String,
+}
+
+pub fn piece_pattern(run: u32) -> String {
+    format!("gop_{run}_%d.m4s")
+}
+
+/// Parse "gop_12_3.m4s" -> (run 12, piece 3).
+pub fn parse_piece_name(name: &str) -> Option<(u32, u32)> {
+    let (run, n) = name.strip_prefix("gop_")?.strip_suffix(".m4s")?.split_once('_')?;
+    Some((run.parse().ok()?, n.parse().ok()?))
+}
+
+/// Does this piece hold the keyframe a segment starts on?
+fn starts_segment(timeline: &Timeline, piece: &Piece) -> bool {
+    let start = timeline.start_ms(timeline.segment_at(piece.start_ms));
+    piece.start_ms.abs_diff(start) <= BOUNDARY_TOLERANCE_MS
+}
+
+/// Segments that one run's pieces now complete, with their pieces in order.
+/// A segment is complete once the run has a piece starting in a later
+/// segment, or the run reached the end of the file (`finished`).
+///
+/// Only whole segments count. ffmpeg starts a run on a keyframe at or before
+/// the one it was asked for, so a run's first pieces can be the tail of the
+/// segment before; joined on their own they would be a segment with its
+/// beginning missing (see `stray_pieces`).
+pub fn complete_segments(timeline: &Timeline, pieces: &[Piece], run: u32, finished: bool) -> Vec<(u32, Vec<String>)> {
+    let mut mine: Vec<&Piece> = pieces.iter().filter(|p| p.run == run).collect();
+    mine.sort_by_key(|p| p.start_ms);
+    let Some(last) = mine.last() else { return Vec::new() };
+    let last_segment = timeline.segment_at(last.start_ms);
+    let mut out: Vec<(u32, Vec<String>)> = Vec::new();
+    // Segment of the piece before, and whether the run has that segment from its start.
+    let mut current: Option<(u32, bool)> = None;
+    for p in &mine {
+        let seg = timeline.segment_at(p.start_ms);
+        if seg == last_segment && !finished {
+            break;
+        }
+        let whole = match current {
+            Some((s, whole)) if s == seg => whole,
+            _ => starts_segment(timeline, p),
+        };
+        current = Some((seg, whole));
+        if !whole {
+            continue;
+        }
+        match out.last_mut() {
+            Some((s, names)) if *s == seg => names.push(p.name.clone()),
+            _ => out.push((seg, vec![p.name.clone()])),
+        }
+    }
     out
+}
+
+/// Pieces of a run that can never become a segment: the ones before the
+/// first segment the run has from its start. Safe to delete.
+pub fn stray_pieces(timeline: &Timeline, pieces: &[Piece], run: u32) -> Vec<String> {
+    let mut mine: Vec<&Piece> = pieces.iter().filter(|p| p.run == run).collect();
+    mine.sort_by_key(|p| p.start_ms);
+    match mine.iter().position(|p| starts_segment(timeline, p)) {
+        Some(first_whole) => mine[..first_whole].iter().map(|p| p.name.clone()).collect(),
+        None => Vec::new(),
+    }
 }
 
 /// ffmpeg is paused once it is this many segments ahead of the player
@@ -99,6 +238,22 @@ pub fn throttle(running: bool, paused: bool, last_requested: u32, produced: Opti
     Throttle::Keep
 }
 
+/// How far a run has got: the end of the unbroken stretch of finished
+/// segments from where it started. `through` is the previous answer, so
+/// segments the player has left behind (and that were deleted) still count.
+/// Files further on from an earlier run only count once the stretch reaches
+/// them, so a restarted run isn't taken to be far ahead.
+pub fn progress(existing: &[u32], started_at: u32, through: Option<u32>) -> Option<u32> {
+    let have: std::collections::HashSet<u32> = existing.iter().copied().collect();
+    let mut end = through;
+    let mut next = through.map_or(Some(started_at), |t| t.checked_add(1));
+    while let Some(n) = next.filter(|n| have.contains(n)) {
+        end = Some(n);
+        next = n.checked_add(1);
+    }
+    end
+}
+
 /// Finished segments that can be deleted: well behind the player, or far
 /// ahead of it (left over from before a seek back).
 pub fn segments_to_delete(existing: &[u32], last_requested: u32) -> Vec<u32> {
@@ -113,12 +268,14 @@ mod tests {
 
     #[test]
     fn counts_and_positions() {
-        assert_eq!(segment_count(60_000, 6), 10);
-        assert_eq!(segment_count(61_000, 6), 11);
-        assert_eq!(segment_count(0, 6), 1);
-        assert_eq!(segment_for_position(0, 6), 0);
-        assert_eq!(segment_for_position(5_999, 6), 0);
-        assert_eq!(segment_for_position(6_000, 6), 1);
+        assert_eq!(Timeline::fixed(60_000, 6).count(), 10);
+        assert_eq!(Timeline::fixed(61_000, 6).count(), 11);
+        assert_eq!(Timeline::fixed(0, 6).count(), 1);
+        let t = Timeline::fixed(60_000, 6);
+        assert_eq!(t.segment_at(0), 0);
+        assert_eq!(t.segment_at(5_900), 0);
+        assert_eq!(t.segment_at(6_000), 1);
+        assert_eq!((t.start_ms(9), t.end_ms(9)), (54_000, 60_000));
     }
 
     #[test]
@@ -133,7 +290,7 @@ mod tests {
 
     #[test]
     fn playlist_snapshot() {
-        insta::assert_snapshot!(vod_playlist(14_500, 6, SegmentFormat::MpegTs), @r"
+        insta::assert_snapshot!(Timeline::fixed(14_500, 6).playlist(SegmentFormat::MpegTs), @r"
         #EXTM3U
         #EXT-X-VERSION:3
         #EXT-X-TARGETDURATION:6
@@ -151,7 +308,7 @@ mod tests {
 
     #[test]
     fn fmp4_playlist_snapshot() {
-        insta::assert_snapshot!(vod_playlist(8_000, 6, SegmentFormat::Fmp4), @r#"
+        insta::assert_snapshot!(Timeline::fixed(8_000, 6).playlist(SegmentFormat::Fmp4), @r#"
         #EXTM3U
         #EXT-X-VERSION:7
         #EXT-X-TARGETDURATION:6
@@ -192,5 +349,107 @@ mod tests {
         assert!(!gone.contains(&130));
         assert!(gone.contains(&131));
         assert!(segments_to_delete(&[0, 1, 2], 3).is_empty());
+    }
+
+    #[test]
+    fn keyframe_timeline_starts_segments_on_keyframes() {
+        // Keyframes every 2.002 s (23.976 fps, GOP 48), plus a scene cut at 7.5 s.
+        let mut kf: Vec<u64> = (0..30).map(|i| i * 2002).collect();
+        kf.push(7_500);
+        let t = Timeline::from_keyframes(&kf, 60_000, 6).unwrap();
+        assert!(t.keyframe_aligned());
+        assert_eq!(&t.starts_ms[..4], &[0, 6006, 12012, 18018]);
+        assert_eq!(t.end_ms(t.count() - 1), 60_000);
+        assert_eq!(t.segment_at(6_000), 1, "a piece starting 6 ms early still starts segment 1");
+        assert_eq!(t.segment_at(7_500), 1);
+        assert_eq!(t.segment_at(12_011), 2);
+        assert_eq!(t.origin_ms(), 0);
+        assert!(Timeline::from_keyframes(&[0], 60_000, 6).is_none());
+        assert!(Timeline::from_keyframes(&[], 60_000, 6).is_none());
+    }
+
+    #[test]
+    fn a_file_that_does_not_start_at_zero_still_gets_a_playlist_from_zero() {
+        // The first keyframe is at 3.2 s in the file.
+        let kf: Vec<u64> = (0..30).map(|i| 3_200 + i * 2002).collect();
+        let t = Timeline::from_keyframes(&kf, 60_000, 6).unwrap();
+        assert_eq!(&t.starts_ms[..3], &[0, 6006, 12012]);
+        assert_eq!(t.origin_ms(), 3_200);
+        assert_eq!(t.from_source_ms(15_212), 12_012);
+        assert_eq!(t.segment_at(t.from_source_ms(9_206)), 1);
+    }
+
+    #[test]
+    fn keyframe_playlist_uses_real_lengths() {
+        let t = Timeline::from_keyframes(&[0, 5005, 10010, 15015, 20020], 22_000, 6).unwrap();
+        insta::assert_snapshot!(t.playlist(SegmentFormat::Fmp4), @r#"
+        #EXTM3U
+        #EXT-X-VERSION:7
+        #EXT-X-TARGETDURATION:11
+        #EXT-X-PLAYLIST-TYPE:VOD
+        #EXT-X-MEDIA-SEQUENCE:0
+        #EXT-X-MAP:URI="init.mp4"
+        #EXTINF:10.010,
+        seg_0.m4s
+        #EXTINF:10.010,
+        seg_1.m4s
+        #EXTINF:1.980,
+        seg_2.m4s
+        #EXT-X-ENDLIST
+        "#);
+    }
+
+    #[test]
+    fn pieces_complete_a_segment_once_the_next_one_starts() {
+        let t = Timeline::from_keyframes(&(0..20).map(|i| i * 2000).collect::<Vec<_>>(), 40_000, 6).unwrap();
+        let piece = |run: u32, start_ms: u64| Piece { run, start_ms, name: format!("gop_{run}_{start_ms}.m4s") };
+        // Run 1 started at 6 s; an old run 0 left a piece behind.
+        let pieces =
+            vec![piece(1, 6000), piece(1, 8000), piece(1, 10000), piece(1, 12000), piece(1, 14000), piece(0, 2000)];
+        assert_eq!(
+            complete_segments(&t, &pieces, 1, false),
+            vec![(1, vec!["gop_1_6000.m4s".into(), "gop_1_8000.m4s".into(), "gop_1_10000.m4s".into()])]
+        );
+        // At the end of the file the last segment is complete too.
+        let done = complete_segments(&t, &pieces, 1, true);
+        assert_eq!(done.len(), 2);
+        assert_eq!(done[1], (2, vec!["gop_1_12000.m4s".into(), "gop_1_14000.m4s".into()]));
+        assert!(complete_segments(&t, &pieces, 7, false).is_empty());
+        assert!(stray_pieces(&t, &pieces, 1).is_empty());
+        assert_eq!(parse_piece_name("gop_12_3.m4s"), Some((12, 3)));
+        assert_eq!(parse_piece_name("seg_3.m4s"), None);
+    }
+
+    #[test]
+    fn a_run_that_starts_inside_a_segment_does_not_make_that_segment() {
+        let t = Timeline::from_keyframes(&(0..20).map(|i| i * 2000).collect::<Vec<_>>(), 40_000, 6).unwrap();
+        let piece = |start_ms: u64| Piece { run: 2, start_ms, name: format!("gop_2_{start_ms}.m4s") };
+        // Asked for segment 2 (12 s); ffmpeg began one keyframe early, at 10 s (the end of segment 1).
+        let pieces = vec![piece(10_000), piece(12_004), piece(14_004), piece(16_004), piece(18_004)];
+        assert_eq!(
+            complete_segments(&t, &pieces, 2, false),
+            vec![(2, vec!["gop_2_12004.m4s".into(), "gop_2_14004.m4s".into(), "gop_2_16004.m4s".into()])]
+        );
+        assert_eq!(stray_pieces(&t, &pieces, 2), vec!["gop_2_10000.m4s".to_string()]);
+        // Nothing is thrown away before the run's first whole segment shows up.
+        assert!(stray_pieces(&t, &pieces[..1], 2).is_empty());
+        assert!(complete_segments(&t, &pieces[..1], 2, true).is_empty());
+    }
+
+    #[test]
+    fn progress_stops_at_the_first_gap() {
+        // A run restarted at 3 has made 3 and 4; 9.. are left from an earlier run.
+        let existing = [9, 3, 10, 4, 11];
+        assert_eq!(progress(&existing, 3, None), Some(4));
+        assert_eq!(progress(&existing, 5, None), None);
+        assert_eq!(progress(&[], 0, None), None);
+        // Once it reaches the old files, they count.
+        assert_eq!(progress(&[5, 6, 7, 8, 9, 10, 11], 3, Some(4)), Some(11));
+    }
+
+    #[test]
+    fn progress_keeps_segments_deleted_behind_the_player() {
+        assert_eq!(progress(&[7, 8], 0, Some(6)), Some(8));
+        assert_eq!(progress(&[], 0, Some(6)), Some(6));
     }
 }

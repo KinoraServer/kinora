@@ -15,6 +15,14 @@
 //! copied to `init.mp4` and served for the whole session. They are all the
 //! same, since the streams and their timestamps don't depend on the start.
 //!
+//! Copied video can only be cut at its own keyframes. When the file's index
+//! gives the keyframe times (Matroska Cues), the playlist's segments start
+//! on keyframes (`Timeline::from_keyframes`), ffmpeg cuts at every keyframe
+//! into small `gop_<run>_<n>.m4s` pieces, and the pieces are joined into
+//! `seg_N.m4s` here once a segment is complete. Segments then hold exactly
+//! what the playlist says, whichever ffmpeg run wrote them, so the player
+//! never has to correct its timeline (that caused stalls).
+//!
 //! ffmpeg is paused (stopped) once it is about two minutes ahead of the
 //! player and started again before the player runs out, and segments well
 //! behind the player are deleted, so a session's folder stays small. That
@@ -24,17 +32,19 @@
 //! asking for segments, so it pings `keepalive` to keep its session. When a
 //! session ends, the source file's page cache is let go (see `page_cache`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile};
+use kinora_core::ffmpeg::{fallback_profile, hls_args, HlsJob, HwProfile, PIECE_TS_OFFSET_MS};
+use kinora_core::fmp4::{first_video_time_ms, video_track, VideoTrack};
 use kinora_core::hls::{
-    run_init_name, segment_count, segment_name, segments_to_delete, throttle, Throttle, INIT_NAME, SEGMENT_SECONDS,
+    complete_segments, parse_piece_name, run_init_name, segment_name, segments_to_delete, stray_pieces, throttle,
+    Piece, Throttle, Timeline, INIT_NAME, SEGMENT_SECONDS,
 };
-use kinora_core::playback::{PlaybackPlan, SegmentFormat};
+use kinora_core::playback::{PlaybackPlan, SegmentFormat, VideoAction};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -60,16 +70,25 @@ pub struct SessionInput {
     pub video_index: Option<u32>,
     pub frame_rate: Option<f64>,
     pub source_is_dolby_vision: bool,
+    /// Video keyframe times from the file's index, when it has one.
+    pub keyframes_ms: Option<Vec<u64>>,
     pub plan: PlaybackPlan,
     pub hw: HwProfile,
 }
 
 struct Session {
     input: SessionInput,
+    timeline: Timeline,
+    /// Video track of each run's init segment, and the start of each piece
+    /// already looked at (keyframe timelines only).
+    run_tracks: HashMap<u32, VideoTrack>,
+    piece_starts: HashMap<String, u64>,
     dir: PathBuf,
     child: Option<Child>,
     /// Segment the current ffmpeg process started at.
     started_at_segment: u32,
+    /// Last segment of the current run's unbroken stretch (see `hls::progress`).
+    produced_through: Option<u32>,
     /// When the current ffmpeg process started.
     run_started: SystemTime,
     /// `init.mp4` is in place (fMP4 sessions only).
@@ -153,11 +172,30 @@ impl TranscodeManager {
         let id = new_id();
         let dir = self.root.join(&id);
         tokio::fs::create_dir_all(&dir).await?;
+        let fixed = Timeline::fixed(input.duration_ms, SEGMENT_SECONDS);
+        // Only copied video in fMP4 needs keyframe segments; encodes put a
+        // keyframe wherever we ask.
+        let timeline = match (&input.keyframes_ms, input.plan.segments, &input.plan.video) {
+            (Some(kf), SegmentFormat::Fmp4, Some(VideoAction::Copy)) => {
+                Timeline::from_keyframes(kf, input.duration_ms, SEGMENT_SECONDS).unwrap_or(fixed)
+            }
+            _ => fixed,
+        };
+        tracing::info!(
+            session = %dir.display(),
+            segments = timeline.count(),
+            keyframe_aligned = timeline.keyframe_aligned(),
+            "new transcode session"
+        );
         let session = Session {
             input,
+            timeline,
+            run_tracks: HashMap::new(),
+            piece_starts: HashMap::new(),
             dir,
             child: None,
             started_at_segment: 0,
+            produced_through: None,
             run_started: SystemTime::now(),
             init_ready: false,
             throttled: false,
@@ -180,11 +218,11 @@ impl TranscodeManager {
         Some(s.input.user_id.clone())
     }
 
-    /// Duration and segment packaging, for the playlist.
-    pub async fn playlist_info(&self, id: &str) -> Option<(u64, SegmentFormat)> {
+    /// The session's VOD playlist.
+    pub async fn playlist(&self, id: &str) -> Option<String> {
         let s = self.get(id).await?;
         let s = s.lock().await;
-        Some((s.input.duration_ms, s.input.plan.segments))
+        Some(s.timeline.playlist(s.input.plan.segments))
     }
 
     /// Path of the fMP4 init segment, starting ffmpeg if nothing has written one yet.
@@ -198,6 +236,7 @@ impl TranscodeManager {
                     return Err(SegmentError::OutOfRange);
                 }
                 s.last_access = Instant::now();
+                assemble(&mut s).await;
                 promote_init(&mut s).await;
                 if s.init_ready {
                     return Ok(s.dir.join(INIT_NAME));
@@ -206,7 +245,11 @@ impl TranscodeManager {
                     Some(c) => matches!(c.try_wait(), Ok(None)),
                     None => false,
                 };
-                if !running {
+                // The player asks for the init segment just before its first
+                // segment; give that request a moment to start ffmpeg at the
+                // right place instead of starting it at 0 and restarting.
+                let fresh = s.child.is_none() && s.created.elapsed() < Duration::from_millis(1500);
+                if !running && !fresh {
                     // Usually the first request of a session: start where the
                     // player will most likely ask for its first segment.
                     let start = s.last_segment;
@@ -269,8 +312,7 @@ impl TranscodeManager {
         let deadline = Instant::now() + SEGMENT_TIMEOUT;
         {
             let s = session.lock().await;
-            let count = segment_count(s.input.duration_ms, SEGMENT_SECONDS);
-            if index >= count {
+            if index >= s.timeline.count() {
                 return Err(SegmentError::OutOfRange);
             }
         }
@@ -279,6 +321,7 @@ impl TranscodeManager {
                 let mut s = session.lock().await;
                 s.last_access = Instant::now();
                 s.last_segment = index;
+                assemble(&mut s).await;
                 promote_init(&mut s).await;
                 let path = s.dir.join(segment_name(index, s.input.plan.segments));
                 // ffmpeg writes "seg_N.ts.tmp" and renames when done (hls_flags temp_file),
@@ -292,7 +335,7 @@ impl TranscodeManager {
                     None => None,
                 };
                 let running = s.child.is_some() && exit.is_none();
-                let progress = latest_segment(&s.dir, s.started_at_segment).unwrap_or(s.started_at_segment);
+                let progress = progress(&mut s).unwrap_or(s.started_at_segment);
                 let in_reach = running && index >= s.started_at_segment && index <= progress + MAX_WAIT_AHEAD;
                 if !in_reach {
                     let died_before_it = index >= s.started_at_segment && index <= progress;
@@ -346,6 +389,9 @@ impl TranscodeManager {
             frame_rate: s.input.frame_rate,
             segment_seconds: SEGMENT_SECONDS,
             start_segment,
+            start_ms: s.timeline.start_ms(start_segment),
+            origin_ms: s.timeline.origin_ms(),
+            keyframe_pieces: s.timeline.keyframe_aligned(),
             output_dir: &output_dir,
         });
         tracing::info!(session = %s.dir.display(), start_segment, "starting ffmpeg: {}", args.join(" "));
@@ -373,6 +419,7 @@ impl TranscodeManager {
         }
         s.child = Some(child);
         s.started_at_segment = start_segment;
+        s.produced_through = None;
         s.run_started = run_started;
         s.throttled = false;
         Ok(())
@@ -395,8 +442,9 @@ impl TranscodeManager {
             Some(c) => matches!(c.try_wait(), Ok(None)),
             None => false,
         };
-        let produced = latest_segment(&s.dir, s.started_at_segment);
-        let count = segment_count(s.input.duration_ms, SEGMENT_SECONDS);
+        assemble(s).await;
+        let produced = progress(s);
+        let count = s.timeline.count();
         match throttle(running, s.throttled, s.last_segment, produced, count) {
             Throttle::Keep => {}
             Throttle::Pause => {
@@ -442,11 +490,14 @@ fn status(s: &mut Session) -> SessionStatus {
         Some(c) => matches!(c.try_wait(), Ok(None)),
         None => false,
     };
-    let transcoded_through = latest_segment(&s.dir, s.started_at_segment);
+    let transcoded_through = progress(s);
     let speed = if running {
-        let made = transcoded_through.map(|n| n + 1 - s.started_at_segment).unwrap_or(0);
+        // Segment lengths vary on a keyframe timeline, so measure the video made in time, not in segments.
+        let made_ms = transcoded_through
+            .map(|n| s.timeline.end_ms(n).saturating_sub(s.timeline.start_ms(s.started_at_segment)))
+            .unwrap_or(0);
         let elapsed = s.run_started.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-        transcode_speed(made, SEGMENT_SECONDS, elapsed)
+        transcode_speed(made_ms, elapsed)
     } else {
         None
     };
@@ -466,11 +517,11 @@ fn status(s: &mut Session) -> SessionStatus {
 }
 
 /// Seconds of video made per second of wall time, once there's something to go on.
-fn transcode_speed(segments_made: u32, segment_seconds: u32, elapsed_secs: f64) -> Option<f64> {
-    if segments_made == 0 || elapsed_secs < 1.0 {
+fn transcode_speed(video_made_ms: u64, elapsed_secs: f64) -> Option<f64> {
+    if video_made_ms == 0 || elapsed_secs < 1.0 {
         return None;
     }
-    Some(f64::from(segments_made * segment_seconds) / elapsed_secs)
+    Some(video_made_ms as f64 / 1000.0 / elapsed_secs)
 }
 
 async fn kill(s: &mut Session) {
@@ -483,7 +534,8 @@ async fn kill(s: &mut Session) {
 /// segment is complete: copy it to `init.mp4` (via a temp file, so a reader
 /// never sees half of it).
 async fn promote_init(s: &mut Session) {
-    if s.init_ready || s.input.plan.segments != SegmentFormat::Fmp4 {
+    // Keyframe sessions get theirs in `assemble`.
+    if s.init_ready || s.input.plan.segments != SegmentFormat::Fmp4 || s.timeline.keyframe_aligned() {
         return;
     }
     let first = s.dir.join(segment_name(s.started_at_segment, SegmentFormat::Fmp4));
@@ -504,6 +556,117 @@ async fn promote_init(s: &mut Session) {
     }
 }
 
+/// Copy a run's init segment to `init.mp4` (via a temp file).
+async fn install_init(s: &mut Session, run: u32) {
+    let src = s.dir.join(run_init_name(run));
+    let tmp = s.dir.join(format!("{INIT_NAME}.tmp"));
+    let copied = async {
+        tokio::fs::copy(&src, &tmp).await?;
+        tokio::fs::rename(&tmp, s.dir.join(INIT_NAME)).await
+    };
+    match copied.await {
+        Ok(()) => s.init_ready = true,
+        Err(e) => tracing::warn!(session = %s.dir.display(), error = %e, "couldn't set up the init segment"),
+    }
+}
+
+/// Keyframe sessions: join the pieces ffmpeg has written into finished
+/// `seg_N.m4s` files, and drop pieces from runs that were stopped.
+async fn assemble(s: &mut Session) {
+    if !s.timeline.keyframe_aligned() {
+        return;
+    }
+    let names: Vec<String> = match std::fs::read_dir(&s.dir) {
+        Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).collect(),
+        Err(_) => return,
+    };
+    let current = s.started_at_segment;
+    let finished = match s.child.as_mut() {
+        Some(c) => matches!(c.try_wait(), Ok(Some(status)) if status.success()),
+        None => false,
+    };
+    let mut pieces = Vec::new();
+    let mut runs = BTreeSet::new();
+    for name in names {
+        let Some((run, _)) = parse_piece_name(&name) else { continue };
+        runs.insert(run);
+        if run != current {
+            // A stopped run's leftovers: whatever they'd complete, a newer run redoes.
+            let _ = std::fs::remove_file(s.dir.join(&name));
+            s.piece_starts.remove(&name);
+            continue;
+        }
+        let start = match s.piece_starts.get(&name) {
+            Some(t) => *t,
+            None => {
+                let Some(track) = run_track(s, run) else { continue };
+                let Some(t) = piece_start(&s.dir.join(&name), &track) else { continue };
+                let t = s.timeline.from_source_ms(t);
+                s.piece_starts.insert(name.clone(), t);
+                t
+            }
+        };
+        pieces.push(Piece { run, start_ms: start, name });
+    }
+    if !s.init_ready && runs.contains(&current) {
+        // ffmpeg writes the init segment before the first piece.
+        install_init(s, current).await;
+    }
+    // The tail of the segment before the one this run was started for.
+    for name in stray_pieces(&s.timeline, &pieces, current) {
+        let _ = std::fs::remove_file(s.dir.join(&name));
+        s.piece_starts.remove(&name);
+    }
+    for (index, parts) in complete_segments(&s.timeline, &pieces, current, finished) {
+        let target = s.dir.join(segment_name(index, SegmentFormat::Fmp4));
+        if !target.exists() {
+            // A segment can be tens of MB; copy it off the async threads.
+            let (dir, list) = (s.dir.clone(), parts.clone());
+            let joined = tokio::task::spawn_blocking(move || join_pieces(&dir, &list, &target)).await;
+            if let Err(e) = joined.map_err(anyhow::Error::from).and_then(|r| r.map_err(anyhow::Error::from)) {
+                tracing::warn!(session = %s.dir.display(), index, error = %e, "couldn't join segment");
+                continue;
+            }
+        }
+        for name in parts {
+            let _ = std::fs::remove_file(s.dir.join(&name));
+            s.piece_starts.remove(&name);
+        }
+    }
+}
+
+fn run_track(s: &mut Session, run: u32) -> Option<VideoTrack> {
+    if let Some(t) = s.run_tracks.get(&run) {
+        return Some(*t);
+    }
+    let init = std::fs::read(s.dir.join(run_init_name(run))).ok()?;
+    let track = video_track(&init)?;
+    s.run_tracks.insert(run, track);
+    Some(track)
+}
+
+/// Start time of a piece in the source file, from the `moof` at its start (no need to read the media data).
+fn piece_start(path: &Path, track: &VideoTrack) -> Option<u64> {
+    use std::io::Read;
+    let mut head = Vec::new();
+    std::fs::File::open(path).ok()?.take(256 * 1024).read_to_end(&mut head).ok()?;
+    // Pieces are written a fixed offset later than the source (see `PIECE_TS_OFFSET_MS`).
+    first_video_time_ms(&head, track).map(|t| t.saturating_sub(PIECE_TS_OFFSET_MS))
+}
+
+fn join_pieces(dir: &Path, parts: &[String], target: &Path) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = target.with_extension("m4s.tmp");
+    let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+    for name in parts {
+        let mut piece = std::fs::File::open(dir.join(name))?;
+        std::io::copy(&mut piece, &mut out)?;
+    }
+    out.flush()?;
+    drop(out);
+    std::fs::rename(&tmp, target)
+}
+
 /// Indexes of the finished segments in the session folder.
 fn finished_segments(dir: &Path) -> Vec<u32> {
     let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
@@ -513,9 +676,11 @@ fn finished_segments(dir: &Path) -> Vec<u32> {
         .collect()
 }
 
-/// Highest finished segment index >= `from` in the session folder.
-fn latest_segment(dir: &Path, from: u32) -> Option<u32> {
-    finished_segments(dir).into_iter().filter(|n| *n >= from).max()
+/// Bring the current run's progress up to date.
+fn progress(s: &mut Session) -> Option<u32> {
+    s.produced_through =
+        kinora_core::hls::progress(&finished_segments(&s.dir), s.started_at_segment, s.produced_through);
+    s.produced_through
 }
 
 #[cfg(test)]
@@ -524,8 +689,8 @@ mod tests {
 
     #[test]
     fn speed_needs_a_segment_and_some_time() {
-        assert_eq!(transcode_speed(0, 6, 10.0), None);
-        assert_eq!(transcode_speed(3, 6, 0.5), None);
-        assert_eq!(transcode_speed(4, 6, 12.0), Some(2.0));
+        assert_eq!(transcode_speed(0, 10.0), None);
+        assert_eq!(transcode_speed(18_000, 0.5), None);
+        assert_eq!(transcode_speed(24_000, 12.0), Some(2.0));
     }
 }

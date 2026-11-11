@@ -2,4 +2,4 @@
 source: crates/core/src/ffmpeg.rs
 expression: "run(&plan, HwAccel::Nvenc, Tonemapper::Zscale, true, 100)"
 ---
--hide_banner -loglevel error -nostdin -y -ss 600 -copyts -start_at_zero -avoid_negative_ts disabled -i /media/Movie (2020)/Movie.mkv -map 0:0 -map 0:1 -sn -dn -map_metadata -1 -map_chapters -1 -c:v copy -tag:v hvc1 -c:a aac -ac 6 -b:a 384000 -f hls -hls_time 6 -hls_segment_type fmp4 -hls_fmp4_init_filename init_100.mp4 -hls_segment_options movflags=+frag_discont -hls_list_size 0 -hls_flags temp_file -start_number 100 -hls_segment_filename /tmp/t/abc/seg_%d.m4s /tmp/t/abc/ffmpeg.m3u8
+-hide_banner -loglevel error -nostdin -y -ss 600 -copyts -start_at_zero -avoid_negative_ts disabled -i /media/Movie (2020)/Movie.mkv -map 0:0 -map 0:1 -sn -dn -map_metadata -1 -map_chapters -1 -c:v copy -tag:v hvc1 -c:a aac -ac 6 -b:a 384000 -f hls -hls_time 6 -hls_segment_type fmp4 -hls_fmp4_init_filename init_100.mp4 -hls_segment_options movflags=+frag_discont+skip_sidx -hls_list_size 0 -hls_flags temp_file -start_number 100 -hls_segment_filename /tmp/t/abc/seg_%d.m4s /tmp/t/abc/ffmpeg.m3u8
