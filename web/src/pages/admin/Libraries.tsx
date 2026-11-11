@@ -1,4 +1,4 @@
-import { FolderPlus, RefreshCw, Trash2, X } from "lucide-react";
+import { FolderPlus, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderPicker } from "@/components/FolderPicker";
@@ -8,13 +8,15 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { parentFolder } from "@/lib/paths";
 import { useApi } from "@/lib/session";
 import type { Library } from "@/lib/types";
 
 export function LibrariesPage() {
   const { t } = useTranslation();
   const { data, reload, error } = useApi<Library[]>("api/libraries");
-  const [adding, setAdding] = useState(false);
+  // null: closed, "new": adding, a library: editing it.
+  const [editing, setEditing] = useState<Library | "new" | null>(null);
   const anyRunning = data?.some((l) => l.scan?.running);
 
   // Poll while a scan is running.
@@ -40,7 +42,7 @@ export function LibrariesPage() {
         title={t("admin.libraries.title")}
         description={t("admin.libraries.help")}
         action={
-          <Button onClick={() => setAdding(true)}>
+          <Button onClick={() => setEditing("new")}>
             <FolderPlus className="h-4 w-4" /> {t("admin.libraries.add")}
           </Button>
         }
@@ -84,6 +86,15 @@ export function LibrariesPage() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setEditing(lib)}
+                aria-label={t("admin.libraries.edit", { name: lib.name })}
+                title={t("admin.libraries.edit", { name: lib.name })}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => remove(lib)}
                 aria-label={t("admin.libraries.remove", { name: lib.name })}
               >
@@ -93,35 +104,49 @@ export function LibrariesPage() {
           </div>
         ))}
       </div>
-      <AddLibraryDialog
-        open={adding}
-        onClose={() => setAdding(false)}
-        onAdded={() => {
-          setAdding(false);
-          reload();
-        }}
-      />
+      {editing && (
+        <LibraryDialog
+          // A fresh form for each library opened.
+          key={editing === "new" ? "new" : editing.id}
+          library={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            reload();
+          }}
+        />
+      )}
     </Card>
   );
 }
 
-function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: () => void }) {
+/** Add a library, or edit one: rename it and change its folders. Its type is fixed once added. */
+export function LibraryDialog({
+  library,
+  onClose,
+  onSaved,
+}: {
+  library: Library | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const { t } = useTranslation();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<"movies" | "tv">("movies");
-  const [paths, setPaths] = useState<string[]>([]);
+  const [name, setName] = useState(library?.name ?? "");
+  const [kind, setKind] = useState<"movies" | "tv">(library?.kind ?? "movies");
+  const [paths, setPaths] = useState<string[]>(library?.paths ?? []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const removedPaths = library ? library.paths.filter((p) => !paths.includes(p)) : [];
+  const pathsChanged = library ? removedPaths.length > 0 || paths.some((p) => !library.paths.includes(p)) : true;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.post("api/libraries", { name, kind, paths });
-      setName("");
-      setPaths([]);
-      onAdded();
+      if (library) await api.put(`api/libraries/${library.id}`, { name, paths });
+      else await api.post("api/libraries", { name, kind, paths });
+      onSaved();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -130,7 +155,11 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("admin.libraries.add")}>
+    <Dialog
+      open
+      onClose={onClose}
+      title={library ? t("admin.libraries.edit", { name: library.name }) : t("admin.libraries.add")}
+    >
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label={t("common.name")}>
@@ -141,8 +170,12 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
               required
             />
           </Field>
-          <Field label={t("common.type")}>
-            <Select value={kind} onChange={(e) => setKind(e.target.value as "movies" | "tv")}>
+          <Field label={t("common.type")} help={library ? t("admin.libraries.kind_fixed") : undefined}>
+            <Select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as "movies" | "tv")}
+              disabled={library !== null}
+            >
               <option value="movies">{t("admin.libraries.kind_movies")}</option>
               <option value="tv">{t("admin.libraries.kind_tv")}</option>
             </Select>
@@ -153,13 +186,13 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
             {paths.map((p) => (
               <div
                 key={p}
-                className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5 font-mono text-xs"
+                className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 font-mono text-xs"
               >
-                {p}
+                <span className="min-w-0 break-all">{p}</span>
                 <button
                   type="button"
                   onClick={() => setPaths(paths.filter((x) => x !== p))}
-                  className="cursor-pointer"
+                  className="shrink-0 cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   aria-label={t("common.remove", { name: p })}
                 >
                   <X className="h-3.5 w-3.5" />
@@ -167,15 +200,29 @@ function AddLibraryDialog({ open, onClose, onAdded }: { open: boolean; onClose: 
               </div>
             ))}
           </div>
-          <FolderPicker onPick={(p) => !paths.includes(p) && setPaths([...paths, p])} />
+          <FolderPicker
+            initialPath={library ? parentFolder(library.paths[0] ?? "") : undefined}
+            onPick={(p) => !paths.includes(p) && setPaths([...paths, p])}
+          />
         </Field>
+        {library && pathsChanged && (
+          <p className="rounded-md border px-3 py-2 text-sm text-muted-foreground" role="status">
+            {removedPaths.length > 0
+              ? t("admin.libraries.folders_removed", { count: removedPaths.length })
+              : t("admin.libraries.folders_changed")}
+          </p>
+        )}
         <ErrorNote message={error} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" disabled={busy || paths.length === 0}>
-            {t("admin.libraries.add_and_scan")}
+          <Button type="submit" disabled={busy || paths.length === 0 || !name.trim()}>
+            {library
+              ? pathsChanged
+                ? t("admin.libraries.save_and_scan")
+                : t("common.save")
+              : t("admin.libraries.add_and_scan")}
           </Button>
         </div>
       </form>

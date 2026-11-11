@@ -96,6 +96,11 @@ KINORA_CONFIG_DIR=./dev-config cargo run -p kinora-server
 cd web && pnpm dev
 ```
 
+Test media: `scripts/seed-test-media.sh` fills `~/test-media` (or a folder you pass)
+with about 500 fake movies, shows and anime episodes with real titles. They're hard
+links to one tiny video, so the whole folder stays under a megabyte. Add
+`Movies`, `Shows` and `Anime` as libraries. `--clean` removes only what it added.
+
 Tests:
 
 ```bash

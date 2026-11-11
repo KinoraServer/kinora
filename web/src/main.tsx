@@ -6,6 +6,7 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router";
 import { Spinner } from "@/components/ui/card";
 import { SessionProvider, useSession } from "@/lib/session";
 import { ThemeProvider } from "@/lib/theme";
+import { ActivityPage } from "@/pages/admin/Activity";
 import { AdminLayout } from "@/pages/admin/AdminLayout";
 import { DashboardPage } from "@/pages/admin/Dashboard";
 import { LibrariesPage } from "@/pages/admin/Libraries";
@@ -101,6 +102,7 @@ const router = createHashRouter([
         ),
         children: [
           { index: true, element: <DashboardPage /> },
+          { path: "activity", element: <ActivityPage /> },
           { path: "libraries", element: <LibrariesPage /> },
           { path: "users", element: <UsersPage /> },
           { path: "settings", element: <SettingsPage /> },

@@ -213,18 +213,26 @@ export interface SessionStatus {
   hw: string;
   running_seconds: number;
   last_ffmpeg_line: string | null;
+  /** Times realtime the current ffmpeg run is going (2 = twice as fast as playback). */
+  speed?: number | null;
+  /** Frames per second ffmpeg is making. */
+  fps?: number | null;
 }
 
 export interface PlaybackStart {
   method: PlaybackPlan["method"];
   url: string;
   session_id: string | null;
+  /** This playback on the admin dashboard (heartbeats go to api/now-playing/{play_id}). */
+  play_id: string;
   plan: PlaybackPlan;
   duration_ms: number;
   subtitles: SubtitleTrack[];
   hardware: string;
   /** Tracks the server picked from this viewer's choices on other episodes (module "auto-tracks"). */
   auto_tracks?: AutoTracks;
+  /** Seconds to buffer ahead (admin setting). Missing from older servers. */
+  buffer_seconds?: number;
 }
 
 export interface AutoTracks {
@@ -233,4 +241,52 @@ export interface AutoTracks {
   audio_index: number | null;
   /** Missing: no opinion. null: subtitles off. */
   subtitle_index?: number | null;
+}
+
+/** What the player reports about itself in its heartbeats (shown in the dashboard's Trace). */
+export interface ClientStats {
+  render_fps?: number | null;
+  dropped_frames?: number | null;
+  total_frames?: number | null;
+  stalls?: number | null;
+  stalled_ms?: number | null;
+  buffered_ahead_s?: number | null;
+  download_bps?: number | null;
+  stream_bitrate_bps?: number | null;
+  decoded_size?: string | null;
+  player?: string | null;
+  recoveries?: number | null;
+  recent_errors?: string[];
+}
+
+export type PlayState = "playing" | "paused" | "buffering";
+
+/** One live playback on the admin dashboard (`GET api/sessions`). */
+export interface StreamInfo {
+  id: string;
+  method: PlaybackPlan["method"];
+  state: PlayState;
+  user: { id: string; username: string };
+  client: { name: string | null; device: string | null; address: string | null };
+  item: {
+    id: string;
+    kind: string;
+    title: string;
+    series_title: string | null;
+    season: number | null;
+    episode: number | null;
+    year: number | null;
+  };
+  file_id: string;
+  position_ms: number | null;
+  duration_ms: number;
+  started_at: number;
+  last_seen_at: number;
+  bitrate_bps: number | null;
+  url: string;
+  hardware: string;
+  media: MediaInfo;
+  plan: PlaybackPlan;
+  transcoder: SessionStatus | null;
+  client_stats: ClientStats | null;
 }

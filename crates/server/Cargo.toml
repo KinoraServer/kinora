@@ -34,6 +34,10 @@ rust-embed = { version = "8.13.0", features = ["mime-guess"] }
 time = "0.3"
 tower = { version = "0.5", features = ["util"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# posix_fadvise, to let go of a video's page cache when playback ends (page_cache.rs).
+libc = "0.2"
+
 [dev-dependencies]
 http-body-util = "0.1.5"
 tempfile = "3.27.0"

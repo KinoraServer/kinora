@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import type { Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { episodeCode, progressPercent } from "@/lib/format";
@@ -55,7 +56,9 @@ export function MediaRow({ title, items, wide }: { title: string; items: ItemCar
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="scrollbar-none -mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-8 sm:px-8">
+      {/* A scroller clips vertically too: the padding (pulled back with a negative margin)
+          leaves room for the hover ring above the tiles. */}
+      <div className="scrollbar-none -mx-4 -mt-1 flex gap-4 overflow-x-auto px-4 pt-1 pb-2 sm:-mx-8 sm:px-8">
         {items.map((item) => (
           <ItemTile
             key={item.id}
@@ -69,9 +72,12 @@ export function MediaRow({ title, items, wide }: { title: string; items: ItemCar
   );
 }
 
-export function ItemGrid({ items }: { items: ItemCard[] }) {
+export function ItemGrid({ items, ref }: { items: ItemCard[]; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-4 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]">
+    <div
+      ref={ref}
+      className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-x-4 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]"
+    >
       {items.map((item) => (
         <ItemTile key={item.id} item={item} />
       ))}

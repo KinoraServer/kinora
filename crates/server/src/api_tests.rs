@@ -222,6 +222,8 @@ async fn viewers_cannot_do_admin_things() {
         .call("POST", "/api/libraries", Some(json!({"name": "M", "kind": "movies", "paths": ["/"]})), Some(&viewer))
         .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("PUT", "/api/libraries/any", Some(json!({"name": "Mine"})), Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 
     // But they can browse.
     let (s, _) = t.call("GET", "/api/home", None, Some(&viewer)).await;
@@ -309,6 +311,93 @@ async fn library_needs_existing_folder() {
         .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("folder not found"));
+}
+
+#[tokio::test]
+async fn editing_a_library() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let media = tempfile::tempdir().unwrap();
+    let dir = |name: &str| {
+        let p = media.path().join(name);
+        std::fs::create_dir_all(&p).unwrap();
+        p.display().to_string()
+    };
+    let (movies, movies_4k, tv, anime) = (dir("movies"), dir("movies-4k"), dir("tv"), dir("anime"));
+
+    let (s, body) = t
+        .call(
+            "POST",
+            "/api/libraries",
+            Some(json!({"name": "Movies", "kind": "movies", "paths": [movies]})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let id = body["id"].as_str().unwrap().to_string();
+    let (s, body) =
+        t.call("POST", "/api/libraries", Some(json!({"name": "TV", "kind": "tv", "paths": [tv]})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let uri = format!("/api/libraries/{id}");
+
+    // Rename only: same id, folders kept, no rescan.
+    let (s, body) = t.call("PUT", &uri, Some(json!({"name": "Films"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["rescan"], false);
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!(lib["name"], "Films");
+    assert_eq!(lib["paths"], json!([movies]));
+
+    // Add a folder (with a trailing slash and a duplicate): cleaned up and rescanned.
+    let (s, body) = t
+        .call(
+            "PUT",
+            &uri,
+            Some(json!({"name": "Films", "kind": "movies", "paths": [movies, format!("{movies_4k}/"), movies_4k]})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["rescan"], true);
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!(lib["paths"], json!([movies, movies_4k]));
+
+    // Remove one again.
+    let (s, body) = t.call("PUT", &uri, Some(json!({"paths": [movies_4k]})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!(lib["paths"], json!([movies_4k]));
+
+    let rejected: [(Value, StatusCode, &str); 7] = [
+        (json!({"name": "tv"}), StatusCode::CONFLICT, "already a library called"),
+        (json!({"name": "  "}), StatusCode::BAD_REQUEST, "name"),
+        (json!({"kind": "tv"}), StatusCode::BAD_REQUEST, "can't be changed"),
+        (json!({"paths": []}), StatusCode::BAD_REQUEST, "at least one folder"),
+        (json!({"paths": ["/definitely/not/here"]}), StatusCode::BAD_REQUEST, "folder not found"),
+        (json!({"paths": [media.path(), movies]}), StatusCode::BAD_REQUEST, "overlap"),
+        (json!({"paths": [movies, anime, tv]}), StatusCode::CONFLICT, "the library TV already uses"),
+    ];
+    for (edit, status, message) in rejected {
+        let (s, body) = t.call("PUT", &uri, Some(edit.clone()), Some(&owner)).await;
+        assert_eq!(s, status, "{edit} -> {body}");
+        assert!(body["error"].as_str().unwrap().contains(message), "{edit} -> {body}");
+    }
+    // Nothing changed after the rejected edits.
+    let (_, libs) = t.call("GET", "/api/libraries", None, Some(&owner)).await;
+    let lib = libs.as_array().unwrap().iter().find(|l| l["id"] == id.as_str()).unwrap();
+    assert_eq!((&lib["name"], &lib["paths"]), (&json!("Films"), &json!([movies_4k])));
+
+    // A library can't be created on another library's folder either.
+    let (s, _) = t
+        .call("POST", "/api/libraries", Some(json!({"name": "Shows", "kind": "tv", "paths": [tv]})), Some(&owner))
+        .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+
+    let (s, _) = t.call("PUT", "/api/libraries/nope", Some(json!({"name": "X"})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
 }
 
 /// A show with two episodes laid out like the 86 Eighty Six release: English
@@ -561,4 +650,120 @@ async fn app_skins_starter_options_and_active_bundle() {
     assert_eq!(s, StatusCode::NO_CONTENT);
     let (_, list) = t.call("GET", "/api/app-skins", None, Some(&owner)).await;
     assert_eq!(list["skins"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn dashboard_lists_direct_play_and_follows_heartbeats() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (f1, _) = seed_show(&t.db).await;
+    // A client that plays the mkv as is: direct play, no transcoder involved.
+    let start = json!({
+        "caps": {"containers": ["mkv"], "video_codecs": ["h264"], "audio_codecs": ["aac"]},
+        "client": {"name": "Kinora web", "device": "Chrome on macOS"},
+        "start_ms": 60_000
+    });
+    let (s, body) = t.call("POST", &format!("/api/playback/{f1}"), Some(start), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["method"], "direct_play");
+    let play_id = body["play_id"].as_str().unwrap().to_string();
+
+    let (s, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK);
+    let row = &list[0];
+    assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(row["id"], play_id.as_str());
+    assert_eq!(row["method"], "direct_play");
+    assert_eq!(row["item"]["kind"], "episode");
+    assert_eq!(row["item"]["series_title"], "show");
+    assert_eq!(row["item"]["season"], 1);
+    assert_eq!(row["item"]["episode"], 1);
+    assert_eq!(row["client"]["device"], "Chrome on macOS");
+    assert_eq!(row["duration_ms"], 1_420_000);
+    assert_eq!(row["position_ms"], 60_000);
+    assert!(row["transcoder"].is_null());
+
+    // A paused heartbeat with stats.
+    let hb = json!({"position_ms": 120_000, "state": "paused",
+                    "stats": {"dropped_frames": 3, "total_frames": 900, "recent_errors": ["oops"]}});
+    let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(hb), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(list[0]["state"], "paused");
+    assert_eq!(list[0]["position_ms"], 120_000);
+    assert_eq!(list[0]["bitrate_bps"], 0);
+    assert_eq!(list[0]["client_stats"]["dropped_frames"], 3);
+    assert_eq!(list[0]["client_stats"]["recent_errors"][0], "oops");
+
+    // Clients without heartbeats still move the marker with their progress saves.
+    let (s, _) = t
+        .call(
+            "POST",
+            "/api/items/e1/progress",
+            Some(json!({"position_ms": 200_000, "duration_ms": 1_420_000})),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(list[0]["position_ms"], 200_000);
+
+    // Viewers can't see the dashboard or touch someone else's playback.
+    t.call(
+        "POST",
+        "/api/users",
+        Some(json!({"username": "kid", "password": "password123", "role": "viewer"})),
+        Some(&owner),
+    )
+    .await;
+    let (_, login) =
+        t.call("POST", "/api/auth/login", Some(json!({"username": "kid", "password": "password123"})), None).await;
+    let viewer = login["token"].as_str().unwrap().to_string();
+    let (s, _) = t.call("GET", "/api/sessions", None, Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(json!({})), Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = t.call("DELETE", &format!("/api/now-playing/{play_id}"), None, Some(&viewer)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+
+    // Closing the player removes it; later heartbeats get a 404.
+    let (s, _) = t.call("DELETE", &format!("/api/now-playing/{play_id}"), None, Some(&owner)).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = t.call("GET", "/api/sessions", None, Some(&owner)).await;
+    assert_eq!(list, json!([]));
+    let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(json!({})), Some(&owner)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn stream_buffer_is_an_admin_setting_players_receive() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (f1, _) = seed_show(&t.db).await;
+    let start = json!({"caps": {"containers": ["mkv"], "video_codecs": ["h264"], "audio_codecs": ["aac"]}});
+
+    let (_, settings) = t.call("GET", "/api/system/settings", None, Some(&owner)).await;
+    assert_eq!(settings["stream_buffer_seconds"], 30);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f1}"), Some(start.clone()), Some(&owner)).await;
+    assert_eq!(body["buffer_seconds"], 30);
+
+    let mut changed = settings.clone();
+    changed["stream_buffer_seconds"] = json!(5);
+    let (s, _) = t.call("PUT", "/api/system/settings", Some(changed.clone()), Some(&owner)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "too small");
+
+    changed["stream_buffer_seconds"] = json!(120);
+    let (s, body) = t.call("PUT", "/api/system/settings", Some(changed), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let (_, settings) = t.call("GET", "/api/system/settings", None, Some(&owner)).await;
+    assert_eq!(settings["stream_buffer_seconds"], 120);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f1}"), Some(start), Some(&owner)).await;
+    assert_eq!(body["buffer_seconds"], 120);
+
+    // Older clients that don't send the field keep the default.
+    let mut old = settings.clone();
+    old.as_object_mut().unwrap().remove("stream_buffer_seconds");
+    let (s, body) = t.call("PUT", "/api/system/settings", Some(old), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["stream_buffer_seconds"], 30);
 }

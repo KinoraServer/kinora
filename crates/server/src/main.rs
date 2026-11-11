@@ -8,6 +8,8 @@ mod hw;
 mod items;
 mod libraries;
 mod modules;
+mod now_playing;
+mod page_cache;
 mod playback;
 mod probe;
 mod scanner;
@@ -30,6 +32,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::hw::HardwareReport;
+use crate::now_playing::NowPlaying;
 use crate::scanner::ScanManager;
 use crate::state::AppState;
 use crate::transcode::TranscodeManager;
@@ -80,6 +83,7 @@ pub async fn build_state(config: Config) -> anyhow::Result<AppState> {
         config: Arc::new(config),
         hardware: Arc::new(RwLock::new(HardwareReport::default())),
         transcodes,
+        now_playing: NowPlaying::new(),
         scans: ScanManager::default(),
         http,
         events,
@@ -111,7 +115,10 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("listening on http://{addr}");
-    axum::serve(listener, router(state)).with_graceful_shutdown(shutdown_signal()).await?;
+    // Connection info gives the dashboard each viewer's address.
+    axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
     Ok(())
 }
 
@@ -121,12 +128,12 @@ fn spawn_scheduled_scans(state: AppState) {
         tokio::time::sleep(Duration::from_secs(5)).await;
         loop {
             scanner::scan_all(&state).await;
-            let minutes = system::load_general(&state).await.map(|g| g.3).unwrap_or(60);
+            let minutes = system::load_general(&state).await.map(|g| g.scan_interval_minutes).unwrap_or(60);
             let wait = if minutes == 0 { 3600 } else { u64::from(minutes) * 60 };
             tokio::time::sleep(Duration::from_secs(wait)).await;
             if minutes == 0 {
                 // Disabled: keep checking whether it's been turned back on.
-                while system::load_general(&state).await.map(|g| g.3).unwrap_or(0) == 0 {
+                while system::load_general(&state).await.map(|g| g.scan_interval_minutes).unwrap_or(0) == 0 {
                     tokio::time::sleep(Duration::from_secs(300)).await;
                 }
             }

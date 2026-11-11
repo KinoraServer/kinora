@@ -264,7 +264,7 @@ IDs are UUIDv7 (sortable). Times are Unix ms.
 
 **Phase 1 — Kernel + library + direct play.** Workspace, CI on 3 OSes, SQLite, users/roles, setup wizard, **module registry and event bus** (even with only built-ins), Movies/TV library types, scanner + file watching, TMDB + local `.nfo` modules, browse/search API with OpenAPI, web UI (home, library, detail, player, admin), direct play, resume/watched, proxy settings.
 
-**Phase 2 — Transcoding + HDR.** Bundled FFmpeg, hardware probing for all backends, decision engine, argument builder, HLS sessions, subtitles (text → WebVTT, burn-in for image subs), HDR10/DV handling and tone mapping, concurrent-session limits, admin view of active streams.
+**Phase 2 — Transcoding + HDR.** Bundled FFmpeg, hardware probing for all backends, decision engine, argument builder, HLS sessions, subtitles (text → WebVTT, burn-in for image subs), HDR10/DV handling and tone mapping, concurrent-session limits, admin view of active streams (every playback method, see D21).
 
 **Phase 3 — Packaging.** Multi-arch Docker image, Windows service installer, macOS app, Linux binaries, proxy docs, backups/restore.
 

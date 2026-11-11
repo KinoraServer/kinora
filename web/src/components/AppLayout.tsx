@@ -23,7 +23,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
+      <header data-sticky-header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-3 px-4 sm:px-8">
           <Link to="/" className="mr-2 flex cursor-pointer items-center gap-2 font-semibold">
             <Logo className="h-9 w-9" />

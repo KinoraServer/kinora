@@ -29,7 +29,8 @@
 //! matters because the transcode folder is often in RAM (/tmp on Unraid).
 //!
 //! Idle sessions are killed and their folders deleted. A paused player stops
-//! asking for segments, so it pings `keepalive` to keep its session.
+//! asking for segments, so it pings `keepalive` to keep its session. When a
+//! session ends, the source file's page cache is let go (see `page_cache`).
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -112,19 +113,6 @@ pub enum SegmentError {
     Failed(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct SessionInfo {
-    pub id: String,
-    pub username: String,
-    pub item_id: String,
-    pub title: String,
-    pub method: kinora_core::playback::Method,
-    pub plan: PlaybackPlan,
-    pub hw: String,
-    pub position_ms: u64,
-    pub running_seconds: u64,
-}
-
 /// Live state of one session, for the player's trace view.
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionStatus {
@@ -143,6 +131,11 @@ pub struct SessionStatus {
     pub running_seconds: u64,
     /// Last line ffmpeg printed, if any.
     pub last_ffmpeg_line: Option<String>,
+    /// How much faster than realtime the current ffmpeg run is going
+    /// (2.0 = two seconds of video per second). Missing until it has made a segment.
+    pub speed: Option<f64>,
+    /// Frames per second ffmpeg is producing (speed × source frame rate).
+    pub fps: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -275,21 +268,19 @@ impl TranscodeManager {
         let s = self.get(id).await?;
         let mut s = s.lock().await;
         s.last_access = Instant::now();
-        let running = match s.child.as_mut() {
-            Some(c) => matches!(c.try_wait(), Ok(None)),
-            None => false,
-        };
-        Some(SessionStatus {
-            running,
-            throttled: s.throttled,
-            started_at_segment: s.started_at_segment,
-            last_requested_segment: s.last_segment,
-            transcoded_through: progress(&mut s),
-            segment_seconds: SEGMENT_SECONDS,
-            hw: s.input.hw.accel.label().to_string(),
-            running_seconds: s.created.elapsed().as_secs(),
-            last_ffmpeg_line: s.last_stderr.lock().ok().and_then(|l| l.clone()),
-        })
+        Some(status(&mut s))
+    }
+
+    /// The state of every session, for the admin dashboard (doesn't keep them alive).
+    pub async fn all_status(&self) -> HashMap<String, SessionStatus> {
+        let sessions: Vec<(String, Arc<Mutex<Session>>)> =
+            self.sessions.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut out = HashMap::new();
+        for (id, s) in sessions {
+            let mut s = s.lock().await;
+            out.insert(id, status(&mut s));
+        }
+        out
     }
 
     pub async fn stop(&self, id: &str) {
@@ -298,28 +289,21 @@ impl TranscodeManager {
             let mut s = s.lock().await;
             kill(&mut s).await;
             let _ = tokio::fs::remove_dir_all(&s.dir).await;
+            if !self.is_playing(&s.input.file_path).await {
+                crate::page_cache::release(&s.input.file_path);
+            }
         }
     }
 
-    pub async fn list(&self) -> Vec<SessionInfo> {
-        let sessions: Vec<(String, Arc<Mutex<Session>>)> =
-            self.sessions.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        let mut out = Vec::new();
-        for (id, s) in sessions {
-            let s = s.lock().await;
-            out.push(SessionInfo {
-                id,
-                username: s.input.username.clone(),
-                item_id: s.input.item_id.clone(),
-                title: s.input.title.clone(),
-                method: s.input.plan.method,
-                plan: s.input.plan.clone(),
-                hw: s.input.hw.accel.label().to_string(),
-                position_ms: s.timeline.start_ms(s.last_segment),
-                running_seconds: s.created.elapsed().as_secs(),
-            });
+    /// Is any session reading this file?
+    pub async fn is_playing(&self, file_path: &str) -> bool {
+        let sessions: Vec<Arc<Mutex<Session>>> = self.sessions.lock().await.values().cloned().collect();
+        for s in sessions {
+            if s.lock().await.input.file_path == file_path {
+                return true;
+            }
         }
-        out
+        false
     }
 
     /// Path of a finished segment, starting or restarting ffmpeg as needed.
@@ -500,6 +484,45 @@ impl TranscodeManager {
     }
 }
 
+fn status(s: &mut Session) -> SessionStatus {
+    let running = match s.child.as_mut() {
+        Some(c) => matches!(c.try_wait(), Ok(None)),
+        None => false,
+    };
+    let transcoded_through = progress(s);
+    let speed = if running {
+        // Segment lengths vary on a keyframe timeline, so measure the video made in time, not in segments.
+        let made_ms = transcoded_through
+            .map(|n| s.timeline.end_ms(n).saturating_sub(s.timeline.start_ms(s.started_at_segment)))
+            .unwrap_or(0);
+        let elapsed = s.run_started.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        transcode_speed(made_ms, elapsed)
+    } else {
+        None
+    };
+    SessionStatus {
+        running,
+        throttled: s.throttled,
+        started_at_segment: s.started_at_segment,
+        last_requested_segment: s.last_segment,
+        transcoded_through,
+        segment_seconds: SEGMENT_SECONDS,
+        hw: s.input.hw.accel.label().to_string(),
+        running_seconds: s.created.elapsed().as_secs(),
+        last_ffmpeg_line: s.last_stderr.lock().ok().and_then(|l| l.clone()),
+        speed,
+        fps: speed.zip(s.input.frame_rate).map(|(sp, fr)| sp * fr),
+    }
+}
+
+/// Seconds of video made per second of wall time, once there's something to go on.
+fn transcode_speed(video_made_ms: u64, elapsed_secs: f64) -> Option<f64> {
+    if video_made_ms == 0 || elapsed_secs < 1.0 {
+        return None;
+    }
+    Some(video_made_ms as f64 / 1000.0 / elapsed_secs)
+}
+
 async fn kill(s: &mut Session) {
     if let Some(mut child) = s.child.take() {
         let _ = child.kill().await;
@@ -650,4 +673,16 @@ fn progress(s: &mut Session) -> Option<u32> {
     s.produced_through =
         kinora_core::hls::progress(&finished_segments(&s.dir), s.started_at_segment, s.produced_through);
     s.produced_through
+}
+
+#[cfg(test)]
+mod tests {
+    use super::transcode_speed;
+
+    #[test]
+    fn speed_needs_a_segment_and_some_time() {
+        assert_eq!(transcode_speed(0, 10.0), None);
+        assert_eq!(transcode_speed(18_000, 0.5), None);
+        assert_eq!(transcode_speed(24_000, 12.0), Some(2.0));
+    }
 }
