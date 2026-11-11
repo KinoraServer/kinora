@@ -8,6 +8,7 @@ import { ItemPage } from "@/pages/Item";
 import { LibraryPage, SearchPage } from "@/pages/Library";
 import { UserSettingsPage } from "@/pages/settings/UserSettings";
 import { skinApi, starterBundle, type Starter } from "@/stories/app-skins";
+import { mockError } from "@/stories/mock-api";
 import { DefaultPage, SkinLayout, SkinPage } from "./routes";
 import { SkinProvider } from "./SkinProvider";
 import type { Device } from "./types";
@@ -101,12 +102,33 @@ type Story = StoryObj<typeof meta>;
 
 const skinRoot = (el: HTMLElement) => el.ownerDocument.querySelector("[data-app-skin]");
 
+/** Every card in the "Continue watching" row has the same width at rest, long titles or not. */
+async function expectEvenContinueRow(el: HTMLElement) {
+  const c = within(el);
+  const heading = await c.findByRole("heading", { name: "Continue watching" });
+  const row = heading.closest("section");
+  const cards = [...(row?.querySelectorAll("a") ?? [])];
+  await expect(cards.length).toBeGreaterThan(2);
+  const widths = new Set(cards.map((a) => Math.round(a.getBoundingClientRect().width)));
+  await expect([...widths]).toHaveLength(1);
+}
+
 export const MarqueeHome: Story = {
   parameters: { api: skinApi(starterBundle("marquee")) },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await expect(await c.findByText("Recently added in Movies")).toBeVisible();
     await expect(skinRoot(canvasElement)?.getAttribute("data-app-skin")).toBe("marquee");
+    await expectEvenContinueRow(canvasElement);
+  },
+};
+
+/** Kinora's own home page with the same data, no skin active. */
+export const DefaultHome: Story = {
+  parameters: { api: { ...skinApi(starterBundle("marquee")), "api/app-skin/active": mockError(404) } },
+  play: async ({ canvasElement }) => {
+    await expect(skinRoot(canvasElement)).toBeNull();
+    await expectEvenContinueRow(canvasElement);
   },
 };
 
