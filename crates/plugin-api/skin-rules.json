@@ -85,7 +85,7 @@
     "data-kn-scroll": { "value": "enum", "values": ["prev", "next"], "help": "Inside a data-kn-rail: page it back or forward. Disabled at the ends." },
     "data-kn-carousel": { "value": "duration", "help": "Rotate the children, e.g. `8s`. Pauses on hover, focus and reduced motion. Sets data-current on the visible child." },
     "data-kn-carousel-dots": { "value": "none", "help": "Filled with one button per carousel slide." },
-    "data-kn-component": { "value": "enum", "values": ["user-menu", "search-box"], "help": "Kinora renders its own widget here, styled with theme tokens." },
+    "data-kn-component": { "value": "enum", "values": ["user-menu", "search-box", "watch-party"], "help": "Kinora renders its own widget here, styled with theme tokens." },
     "data-kn-part": { "value": "literal", "help": "Names a part of a component for styling." },
     "data-kn-focus-group": { "value": "literal", "help": "Left/right stay inside this group; up/down return to the last focused item." },
     "data-kn-focus-default": { "value": "none", "help": "Where focus starts on this page." },

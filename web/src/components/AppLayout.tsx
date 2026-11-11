@@ -7,6 +7,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import { useApi, useSession } from "@/lib/session";
 import type { Library, User } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { WatchPartyButton } from "@/watch-party/WatchPartyPanel";
 
 export function AppLayout() {
   const { t } = useTranslation();
@@ -59,6 +60,7 @@ export function AppLayout() {
           <NavLink to="/search" className={cn(navClass({ isActive: false }), "md:hidden")} aria-label={t("nav.search")}>
             <Search className="h-4 w-4" />
           </NavLink>
+          <WatchPartyButton />
           {user && <UserMenu user={user} isAdmin={isAdmin} onLogout={logout} />}
         </div>
       </header>

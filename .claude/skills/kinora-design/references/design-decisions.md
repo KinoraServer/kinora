@@ -31,7 +31,9 @@ as the current truth, never as a history.
 
 ## Components and interaction
 
-- (empty)
+- Side sheets (the watch party panel) slide in from the right, `max-w-sm`, full
+  width on phones, on `bg-card` with `shadow-2xl`, and stay inside the player's
+  frame so they work in fullscreen. (`web/src/watch-party/WatchPartyPanel.tsx`)
 
 ## Player UI
 

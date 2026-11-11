@@ -10,6 +10,8 @@ import { episodeCode } from "@/lib/format";
 import { readSubtitlePreference, saveSubtitlePreference, startSubtitle } from "@/lib/subtitles";
 import { useApi } from "@/lib/session";
 import type { ItemDetail, PlaybackStart, SessionStatus } from "@/lib/types";
+import { PlayBlockedPrompt, WatchPartyPanel, WatchPartyToast } from "@/watch-party/WatchPartyPanel";
+import { useWatchParty } from "@/watch-party/WatchPartyProvider";
 
 /** How often the player tells the server it's still here (paused counts). */
 const KEEPALIVE_MS = 10_000;
@@ -71,6 +73,9 @@ function PlayerView({ id }: { id: string | undefined }) {
   const statsRef = useRef<PlaybackStats | null>(null);
 
   const file = item?.files[0];
+  const party = useWatchParty();
+  const partyRef = useRef(party);
+  partyRef.current = party;
   // The subtitle track is picked once per video. Restarts (an audio change, a lost stream) keep it.
   const subPicked = useRef(false);
 
@@ -115,6 +120,25 @@ function PlayerView({ id }: { id: string | undefined }) {
       statsRef.current = null;
     };
   }, []);
+
+  // Watch party: once the file shows a frame, let the party follow (or share) it. Declared before the
+  // effects that tear the stream down, so leaving detaches the party before the element is disposed of.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!party || !playback || !id || !v) return;
+    const enter = () => party.enterPlayer(id, v, playback.duration_ms);
+    if (v.readyState >= 2) enter();
+    else v.addEventListener("loadeddata", enter, { once: true });
+    return () => v.removeEventListener("loadeddata", enter);
+  }, [party, playback, id]);
+  useEffect(() => {
+    if (!party || !id) return;
+    const closePage = party.openPlayerPage();
+    return () => {
+      void party.leavePlayer(id);
+      closePage();
+    };
+  }, [party, id]);
 
   // The server cleans up streams nobody asked about for a while. If that
   // happened (a long pause, a laptop asleep), quietly start a new one where we were.
@@ -188,7 +212,8 @@ function PlayerView({ id }: { id: string | undefined }) {
           setError(i18n.t("player.no_hls"));
           return;
         }
-        if (stayPaused.current) {
+        // In a watch party the room starts everyone together, once each player is ready.
+        if (stayPaused.current || partyRef.current?.active) {
           stayPaused.current = false;
           return;
         }
@@ -328,6 +353,8 @@ function PlayerView({ id }: { id: string | undefined }) {
 
   const onEnded = () => {
     saveProgress();
+    // In a watch party, stay with the room: the host picks what's next.
+    if (party?.active) return;
     const next = item?.parent_id ? `/item/${item.parent_id}` : `/item/${id}`;
     navigate(next);
   };
@@ -406,6 +433,17 @@ function PlayerView({ id }: { id: string | undefined }) {
       onBack={() => navigate(-1)}
       onPause={saveProgress}
       onEnded={onEnded}
+      onWatchParty={party ? () => party.setPanel(!party.panelOpen) : undefined}
+      watchPartyActive={party?.active ?? false}
+      overlay={
+        party && (
+          <>
+            <PlayBlockedPrompt />
+            <WatchPartyToast />
+            <WatchPartyPanel />
+          </>
+        )
+      }
     >
       {playback?.subtitles
         .filter((s) => s.supported)

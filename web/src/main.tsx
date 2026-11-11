@@ -21,6 +21,8 @@ import { UserSettingsPage, UserSettingsSectionPage } from "@/pages/settings/User
 import { PreviewBanner } from "@/skin-engine/PreviewBanner";
 import { DefaultPage, SkinLayout, SkinPage } from "@/skin-engine/routes";
 import { SkinProvider } from "@/skin-engine/SkinProvider";
+import { WatchPartyLayer } from "@/watch-party/WatchPartyLayer";
+import { WatchPartyProvider } from "@/watch-party/WatchPartyProvider";
 import "./index.css";
 
 // The player pulls in hls.js, so it loads only when someone presses play.
@@ -114,6 +116,9 @@ const router = createHashRouter([
   },
 ]);
 
+/** Lets the watch party open the player from outside React's tree. Stable, so the party isn't recreated. */
+const navigateTo = (path: string) => void router.navigate(path);
+
 function Root() {
   const { t } = useTranslation();
   const { loading, info, user } = useSession();
@@ -129,8 +134,11 @@ function Root() {
   if (!user) return <LoginPage />;
   return (
     <SkinProvider>
-      <RouterProvider router={router} />
-      <PreviewBanner />
+      <WatchPartyProvider navigate={navigateTo}>
+        <RouterProvider router={router} />
+        <WatchPartyLayer />
+        <PreviewBanner />
+      </WatchPartyProvider>
     </SkinProvider>
   );
 }

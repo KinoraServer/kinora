@@ -9,6 +9,7 @@ pub mod auto_tracks;
 pub mod skins;
 pub mod themes;
 pub mod tmdb;
+pub mod watch_party;
 
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post, put};
@@ -23,7 +24,15 @@ use crate::state::AppState;
 
 /// All built-in modules.
 pub fn builtin() -> Vec<ModuleInfo> {
-    vec![tmdb::info(), themes::info(), skins::info(), app_skins::info(), auto_tracks::info(), activity::info()]
+    vec![
+        tmdb::info(),
+        themes::info(),
+        skins::info(),
+        app_skins::info(),
+        auto_tracks::info(),
+        watch_party::info(),
+        activity::info(),
+    ]
 }
 
 pub fn find(id: &str) -> Option<ModuleInfo> {
@@ -109,6 +118,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/app-skin", put(app_skins::put_active))
         .route("/api/app-skin/active", get(app_skins::active))
         .route("/api/me/app-skin", get(app_skins::get_mine).put(app_skins::put_mine))
+        .route("/api/watch-party", get(watch_party::config))
+        .route("/api/watch-party/items/{id}", get(watch_party::item))
+        .route("/api/watch-party/find", post(watch_party::find))
+        .route("/api/watch-party/search", get(watch_party::search))
 }
 
 #[derive(Serialize)]
@@ -168,6 +181,10 @@ async fn update(
         if field.kind == SettingKind::Bool && !matches!(v.as_str(), "" | "true" | "false") {
             return Err(AppError::BadRequest(format!("{k} must be true or false")));
         }
+        if id == watch_party::ID && k == watch_party::RELAY_URL {
+            watch_party::check_relay_url(&v).map_err(AppError::BadRequest)?;
+        }
+        let v = if field.kind == SettingKind::Text { v.trim().to_string() } else { v };
         if v.is_empty() {
             current.remove(&k);
         } else {

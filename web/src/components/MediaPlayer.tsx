@@ -38,6 +38,7 @@ import {
   Palette,
   Pause,
   PictureInPicture2,
+  Popcorn,
   Play,
   RotateCcw,
   RotateCw,
@@ -114,6 +115,12 @@ export interface MediaPlayerProps {
   onBack: () => void;
   onPause?: () => void;
   onEnded?: () => void;
+  /** Opens the watch party panel; without it the player shows no watch party button. */
+  onWatchParty?: () => void;
+  /** The viewer is in a watch party (the button shows as on). */
+  watchPartyActive?: boolean;
+  /** Drawn over the video inside the player's frame, so it stays visible in fullscreen. */
+  overlay?: ReactNode;
   /**
    * <track> elements for the subtitles. Set the chosen track's mode to
    * "hidden" (not "showing"): the player draws its cues itself.
@@ -503,6 +510,21 @@ function BackButton({ c, className }: { c: Ctx; className?: string }) {
   return (
     <IconBtn label={t("common.back")} onClick={c.props.onBack} className={className}>
       <ArrowLeft className="h-5 w-5" />
+    </IconBtn>
+  );
+}
+
+function WatchPartyButton({ c, className }: { c: Ctx; className?: string }) {
+  const { t } = useTranslation();
+  if (!c.props.onWatchParty) return null;
+  return (
+    <IconBtn
+      label={t("watch_party.title")}
+      onClick={c.props.onWatchParty}
+      active={c.props.watchPartyActive}
+      className={className}
+    >
+      <Popcorn className={cn("h-5 w-5", c.props.watchPartyActive && "text-primary")} />
     </IconBtn>
   );
 }
@@ -967,6 +989,7 @@ function MinimalLayout({ c }: { c: Ctx }) {
       <div className={cn("absolute inset-x-0 top-0 flex items-center gap-3 p-4", topGradient)}>
         <BackButton c={c} className="h-10 w-10 bg-white/10" />
         <p className="min-w-0 flex-1 truncate font-medium text-white">{c.props.title}</p>
+        <WatchPartyButton c={c} className="h-10 w-10" />
       </div>
       <div className={cn("absolute inset-x-0 bottom-0 px-4 pt-16 pb-3", bottomGradient)}>
         <Seek c={c} />
@@ -992,6 +1015,7 @@ function CinematicLayout({ c }: { c: Ctx }) {
         <p className="min-w-0 flex-1 truncate text-2xl font-semibold tracking-tight text-white sm:text-3xl">
           {c.props.title}
         </p>
+        <WatchPartyButton c={c} className="h-12 w-12 bg-white/10" />
       </div>
       <div className="absolute inset-0 flex items-center justify-center gap-6 sm:gap-12">
         <IconBtn label={t("player.skip_back")} onClick={() => c.a.skip(-10)} className="h-14 w-14 bg-black/30">
@@ -1038,6 +1062,7 @@ function FloatingLayout({ c }: { c: Ctx }) {
       >
         <BackButton c={c} className="h-9 w-9" />
         <p className="min-w-0 truncate text-sm font-medium text-white">{c.props.title}</p>
+        <WatchPartyButton c={c} className="h-9 w-9" />
       </div>
       <div
         data-kn-bar
@@ -1077,6 +1102,7 @@ function ProLayout({ c }: { c: Ctx }) {
             {c.props.methodLabel}
           </span>
         )}
+        <WatchPartyButton c={c} className="h-9 w-9" />
       </div>
       <div
         data-kn-bar
@@ -1455,6 +1481,7 @@ function SkinLayout({ c, skin }: { c: Ctx; skin: PlayerSkin }) {
         info: a.toggleInfo,
         [SUBTITLE_PANEL]: a.toggleSubtitlePanel,
         back: props.onBack,
+        "watch-party": () => props.onWatchParty?.(),
       };
       actions[el.dataset.knAction ?? ""]?.();
     };
@@ -1623,6 +1650,7 @@ export function MediaPlayer(props: MediaPlayerProps) {
       {ready && <SubtitleOverlay c={c} cues={cues} barHeight={barHeight} />}
       {ready && s.openMenu === SUBTITLE_PANEL && <SubtitlePanel c={c} barHeight={barHeight} />}
       {ready && s.infoOpen && !skin && <InfoPanel c={c} />}
+      {props.overlay}
 
       {(loading || (s.buffering && !error)) && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

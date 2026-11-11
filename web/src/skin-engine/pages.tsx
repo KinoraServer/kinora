@@ -18,6 +18,7 @@ import { nearest, SkinTemplate, type RenderEnv, type Scope, type SkinActions } f
 import { useSkin } from "./SkinProvider";
 import type { AppVM, CardVM, CompiledSkin, ItemVM, SkinNode } from "./types";
 import { useAppVM, useHomeVM, useItemVM, useLibraryVM, useSearchVM } from "./viewmodels";
+import { WatchPartyButton } from "@/watch-party/WatchPartyPanel";
 
 // ---------------------------------------------------------------------------
 // Error boundary
@@ -234,6 +235,7 @@ function useComponents(): Record<string, () => ReactNode> {
   return {
     "user-menu": () => (user ? <UserMenu user={user} isAdmin={isAdmin} onLogout={logout} /> : null),
     "search-box": () => <SearchBox />,
+    "watch-party": () => <WatchPartyButton />,
   };
 }
 

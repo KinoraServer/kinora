@@ -71,7 +71,7 @@ Add attributes to ordinary HTML elements; Kinora does the rest.
 
 | Attribute | What it does |
 |---|---|
-| `data-kn-action="play"` | Play / pause. Others: `skip-back`, `skip-forward`, `mute`, `fullscreen`, `pip`, `info`, `subtitle-position` (opens the subtitle position panel), `back` |
+| `data-kn-action="play"` | Play / pause. Others: `skip-back`, `skip-forward`, `mute`, `fullscreen`, `pip`, `info`, `subtitle-position` (opens the subtitle position panel), `back`, `watch-party` (opens the watch party panel when that module is on, see watch-party.md) |
 | `data-kn-text="time"` | Fills the element with text. Others: `duration`, `remaining`, `title`, `method`, `resolution`, `buffer` |
 | `data-kn-seek` | A seek bar. Children: `data-kn-fill` (played), `data-kn-buffer` (buffered), `data-kn-thumb` (handle, positioned with `left`) |
 | `data-kn-volume` | A volume bar with a `data-kn-fill` child |
