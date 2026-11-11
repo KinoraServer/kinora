@@ -98,9 +98,9 @@ export function networkStateName(n: number): string {
 }
 
 /** "0.0–12.4, 30.0–61.2" */
-export function formatRanges(r: TimeRanges): string {
+export function formatRanges(r: TimeRanges, digits = 1): string {
   const out: string[] = [];
-  for (let i = 0; i < r.length; i++) out.push(`${r.start(i).toFixed(1)}–${r.end(i).toFixed(1)}`);
+  for (let i = 0; i < r.length; i++) out.push(`${r.start(i).toFixed(digits)}–${r.end(i).toFixed(digits)}`);
   return out.length ? out.join(", ") : i18n.t("common.none");
 }
 
@@ -170,6 +170,8 @@ export class PlaybackStats {
   private stalledMs = 0;
   private recoveries = 0;
   private status: SessionStatus | null = null;
+  /** Each SourceBuffer's own ranges (the element's are only their overlap). */
+  private trackRanges: Partial<Record<string, TimeRanges>> = {};
   private statusAt = 0;
   private readonly started = performance.now();
 
@@ -204,14 +206,17 @@ export class PlaybackStats {
     this.hlsVersion = HlsClass.version;
     hls.on(HlsClass.Events.FRAG_LOADED, this.onFrag);
     hls.on(HlsClass.Events.ERROR, this.onHlsError);
+    hls.on(HlsClass.Events.BUFFER_APPENDED, this.onAppended);
   }
 
   private detachHls() {
     if (this.hls && this.hlsEvents) {
       this.hls.off(this.hlsEvents.FRAG_LOADED, this.onFrag);
       this.hls.off(this.hlsEvents.ERROR, this.onHlsError);
+      this.hls.off(this.hlsEvents.BUFFER_APPENDED, this.onAppended);
     }
     this.hls = null;
+    this.trackRanges = {};
   }
 
   private onFrag = (_e: unknown, data: { frag: { sn: number | string; duration: number; stats: FragStats } }) => {
@@ -221,6 +226,10 @@ export class PlaybackStats {
     this.totalBytes += bytes;
     this.frags.push({ sn: data.frag.sn, bytes, ms, duration: data.frag.duration, at: performance.now() });
     if (this.frags.length > KEEP_FRAGS) this.frags.shift();
+  };
+
+  private onAppended = (_e: unknown, data: { timeRanges: Partial<Record<string, TimeRanges>> }) => {
+    this.trackRanges = { ...this.trackRanges, ...data.timeRanges };
   };
 
   private onHlsError = (
@@ -492,6 +501,12 @@ export class PlaybackStats {
             level ? [level.videoCodec, level.audioCodec].filter(Boolean).join(", ") || "–" : "–",
           ],
           [i18n.t("player.trace.bandwidth_estimate"), formatBitrate(this.hls.bandwidthEstimate)],
+          ...(["audio", "video", "audiovideo"] as const)
+            .filter((k) => this.trackRanges[k])
+            .map((k): [string, string] => [
+              i18n.t("player.trace.track_buffered", { track: k }),
+              formatRanges(this.trackRanges[k]!, 3),
+            ]),
           [
             i18n.t("player.trace.target_buffer"),
             `${this.hls.config.maxBufferLength} s (back ${this.hls.config.backBufferLength} s)`,
