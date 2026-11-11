@@ -31,7 +31,11 @@ as the current truth, never as a history.
 
 ## Components and interaction
 
-- (empty)
+- Admin list rows: row actions are small ghost icon buttons (pencil to edit,
+  bin to remove) after any labelled action, each with an `aria-label`. Adding
+  and editing share one dialog; fields that can't change after creation stay
+  visible but disabled, with a help line saying why.
+  (`web/src/pages/admin/Libraries.tsx`)
 
 ## Player UI
 
