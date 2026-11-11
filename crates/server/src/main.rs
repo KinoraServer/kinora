@@ -128,12 +128,12 @@ fn spawn_scheduled_scans(state: AppState) {
         tokio::time::sleep(Duration::from_secs(5)).await;
         loop {
             scanner::scan_all(&state).await;
-            let minutes = system::load_general(&state).await.map(|g| g.3).unwrap_or(60);
+            let minutes = system::load_general(&state).await.map(|g| g.scan_interval_minutes).unwrap_or(60);
             let wait = if minutes == 0 { 3600 } else { u64::from(minutes) * 60 };
             tokio::time::sleep(Duration::from_secs(wait)).await;
             if minutes == 0 {
                 // Disabled: keep checking whether it's been turned back on.
-                while system::load_general(&state).await.map(|g| g.3).unwrap_or(0) == 0 {
+                while system::load_general(&state).await.map(|g| g.scan_interval_minutes).unwrap_or(0) == 0 {
                     tokio::time::sleep(Duration::from_secs(300)).await;
                 }
             }

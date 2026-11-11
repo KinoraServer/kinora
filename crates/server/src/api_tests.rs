@@ -645,3 +645,36 @@ async fn dashboard_lists_direct_play_and_follows_heartbeats() {
     let (s, _) = t.call("POST", &format!("/api/now-playing/{play_id}/heartbeat"), Some(json!({})), Some(&owner)).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn stream_buffer_is_an_admin_setting_players_receive() {
+    let t = app().await;
+    let owner = t.setup_owner().await;
+    let (f1, _) = seed_show(&t.db).await;
+    let start = json!({"caps": {"containers": ["mkv"], "video_codecs": ["h264"], "audio_codecs": ["aac"]}});
+
+    let (_, settings) = t.call("GET", "/api/system/settings", None, Some(&owner)).await;
+    assert_eq!(settings["stream_buffer_seconds"], 30);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f1}"), Some(start.clone()), Some(&owner)).await;
+    assert_eq!(body["buffer_seconds"], 30);
+
+    let mut changed = settings.clone();
+    changed["stream_buffer_seconds"] = json!(5);
+    let (s, _) = t.call("PUT", "/api/system/settings", Some(changed.clone()), Some(&owner)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "too small");
+
+    changed["stream_buffer_seconds"] = json!(120);
+    let (s, body) = t.call("PUT", "/api/system/settings", Some(changed), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let (_, settings) = t.call("GET", "/api/system/settings", None, Some(&owner)).await;
+    assert_eq!(settings["stream_buffer_seconds"], 120);
+    let (_, body) = t.call("POST", &format!("/api/playback/{f1}"), Some(start), Some(&owner)).await;
+    assert_eq!(body["buffer_seconds"], 120);
+
+    // Older clients that don't send the field keep the default.
+    let mut old = settings.clone();
+    old.as_object_mut().unwrap().remove("stream_buffer_seconds");
+    let (s, body) = t.call("PUT", "/api/system/settings", Some(old), Some(&owner)).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(body["stream_buffer_seconds"], 30);
+}

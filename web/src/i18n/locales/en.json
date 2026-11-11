@@ -393,6 +393,8 @@
       "accel_label_video_toolbox": "Apple VideoToolbox",
       "scan_interval": "Scan libraries every (minutes)",
       "scan_interval_help": "0 turns automatic scans off.",
+      "stream_buffer": "Streaming buffer (seconds)",
+      "stream_buffer_help": "How far ahead players load when streaming (10-600, default 30). More rides out network hiccups but uses more memory in the browser, which may cap it for high-bitrate files.",
       "hw_title": "Hardware transcoding",
       "hw_help": "What Kinora found on this machine.",
       "detect": "Detect again",
