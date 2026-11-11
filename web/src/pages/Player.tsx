@@ -5,7 +5,8 @@ import { MediaPlayer, type PlayerChoice } from "@/components/MediaPlayer";
 import { i18n } from "@/i18n";
 import { api } from "@/lib/api";
 import { browserCaps } from "@/lib/caps";
-import { PlaybackStats } from "@/lib/playback-stats";
+import { PlaybackStats, bufferedAhead } from "@/lib/playback-stats";
+import { NUDGE_S, StallWatchdog, startGapTarget } from "@/lib/stall-watchdog";
 import { episodeCode } from "@/lib/format";
 import { readSubtitlePreference, saveSubtitlePreference, startSubtitle } from "@/lib/subtitles";
 import { useApi } from "@/lib/session";
@@ -17,6 +18,10 @@ const KEEPALIVE_MS = 10_000;
 const HEARTBEAT_MS = 5_000;
 /** Give up recovering a lost stream after this many tries in a minute. */
 const MAX_RECOVERIES = 3;
+/** Buffer ahead when the server doesn't say (older servers). */
+const DEFAULT_BUFFER_S = 30;
+/** Played video kept behind the playhead for quick seeks back. */
+const BACK_BUFFER_S = 30;
 
 const METHOD_KEY: Record<
   PlaybackStart["method"],
@@ -67,6 +72,9 @@ function PlayerView({ id }: { id: string | undefined }) {
   const [restartKey, setRestartKey] = useState(0);
   const startAt = useRef(Number(params.get("t") ?? 0));
   const stayPaused = useRef(false);
+  /** Where the viewer is (or is seeking to) and whether they want it playing, kept while
+   *  the media pipeline is healthy: a broken one reports 0 and paused. */
+  const wanted = useRef({ time: 0, playing: true });
   const recoveries = useRef<number[]>([]);
   const statsRef = useRef<PlaybackStats | null>(null);
 
@@ -118,7 +126,9 @@ function PlayerView({ id }: { id: string | undefined }) {
 
   // The server cleans up streams nobody asked about for a while. If that
   // happened (a long pause, a laptop asleep), quietly start a new one where we were.
-  const recover = useCallback((why: string) => {
+  // Also used when the browser's media pipeline breaks or wedges (`sessionGone`
+  // false): then the old stream is stopped on the server first.
+  const recover = useCallback((why: string, sessionGone = true) => {
     const v = videoRef.current;
     const now = Date.now();
     recoveries.current = recoveries.current.filter((t) => now - t < 60_000);
@@ -130,10 +140,10 @@ function PlayerView({ id }: { id: string | undefined }) {
     statsRef.current?.note(`stream lost (${why}), starting a new one`);
     statsRef.current?.noteRecovery();
     if (v) {
-      startAt.current = v.currentTime || startAt.current;
-      stayPaused.current = v.paused;
+      startAt.current = wanted.current.time || v.currentTime || startAt.current;
+      stayPaused.current = !wanted.current.playing;
     }
-    sessionRef.current = null; // already gone on the server
+    if (sessionGone) sessionRef.current = null; // already gone on the server
     setRestartKey((k) => k + 1);
   }, []);
 
@@ -170,15 +180,29 @@ function PlayerView({ id }: { id: string | undefined }) {
           video.src = p.url;
           video.addEventListener("loadedmetadata", () => start > 0 && (video.currentTime = start), { once: true });
         } else if (Hls.isSupported()) {
-          const hls = new Hls({ startPosition: start, maxBufferLength: 30, backBufferLength: 30 });
+          const hls = new Hls({
+            startPosition: start,
+            maxBufferLength: p.buffer_seconds ?? DEFAULT_BUFFER_S,
+            backBufferLength: BACK_BUFFER_S,
+          });
           hlsRef.current = hls;
           statsRef.current?.attachHls(hls, Hls);
+          // Copied video often starts a fraction of a second after 0. Start
+          // there, rather than letting hls.js jump the gap mid-play.
+          hls.once(Hls.Events.FRAG_BUFFERED, () => {
+            const to = startGapTarget(video.buffered, video.currentTime);
+            if (to === null) return;
+            statsRef.current?.note(`stream starts at ${to.toFixed(3)} s, starting there`);
+            video.currentTime = to;
+          });
           hls.loadSource(p.url);
           hls.attachMedia(video);
           hls.on(Hls.Events.ERROR, (_e, data) => {
             if (!data.fatal) return;
             // 404: the server already cleaned this stream up.
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.response?.code === 404) recover(data.details);
+            // A broken media pipeline (decode error, MediaSource reset): start a fresh stream here.
+            else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) recover(data.details, false);
             else setError(i18n.t("player.playback_error", { reason: data.details }));
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -202,6 +226,64 @@ function PlayerView({ id }: { id: string | undefined }) {
       cancelled = true;
     };
   }, [file, audioIndex, forceTranscode, stopSession, restartKey, recover]);
+
+  // Remember the viewer's position and play/pause intent for `recover`.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const healthy = () => !v.error && v.readyState > 0;
+    const onTime = () => {
+      if (healthy() && v.currentTime > 0) wanted.current.time = v.currentTime;
+    };
+    const onSeeking = () => {
+      wanted.current.time = v.currentTime;
+    };
+    const onPlay = () => {
+      wanted.current.playing = true;
+    };
+    const onPause = () => {
+      if (healthy()) wanted.current.playing = false;
+    };
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("seeking", onSeeking);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    return () => {
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("seeking", onSeeking);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+    };
+  }, []);
+
+  // Get a wedged HLS player moving again (see stall-watchdog.ts): nudge, then start a fresh stream.
+  useEffect(() => {
+    if (!playback || playback.method === "direct_play") return;
+    const v = videoRef.current;
+    if (!v) return;
+    const dog = new StallWatchdog();
+    const timer = window.setInterval(() => {
+      const action = dog.tick(
+        {
+          currentTime: v.currentTime,
+          paused: v.paused,
+          seeking: v.seeking,
+          ended: v.ended,
+          bufferedAhead: bufferedAhead(v.buffered, v.currentTime),
+        },
+        Date.now(),
+      );
+      if (action === "nudge") {
+        statsRef.current?.note(`stuck with buffer at ${v.currentTime.toFixed(3)}, nudging`);
+        v.currentTime += NUDGE_S;
+      } else if (action === "recover") {
+        // A fresh stream, not hls.recoverMediaError(): re-attaching the same
+        // buffer made Chrome fail to decode open-GOP video in testing.
+        recover("stuck with a full buffer", false);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [playback, recover]);
 
   // Keep the server's stream alive while the player is open, paused or not,
   // and pick up the transcoder's status for the info panel.

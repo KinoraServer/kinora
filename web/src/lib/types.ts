@@ -231,6 +231,8 @@ export interface PlaybackStart {
   hardware: string;
   /** Tracks the server picked from this viewer's choices on other episodes (module "auto-tracks"). */
   auto_tracks?: AutoTracks;
+  /** Seconds to buffer ahead (admin setting). Missing from older servers. */
+  buffer_seconds?: number;
 }
 
 export interface AutoTracks {
