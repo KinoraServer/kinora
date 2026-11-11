@@ -110,6 +110,8 @@ struct StartResponse {
     /// "auto-tracks"). Missing when there's nothing to go on.
     #[serde(skip_serializing_if = "Option::is_none")]
     auto_tracks: Option<crate::modules::auto_tracks::AutoTracks>,
+    /// Seconds of video to buffer ahead (admin setting "stream_buffer_seconds").
+    buffer_seconds: u32,
 }
 
 async fn start(
@@ -218,6 +220,7 @@ async fn start(
         subtitles,
         hardware: hw.accel.label().to_string(),
         auto_tracks,
+        buffer_seconds: crate::system::stream_buffer_seconds(&state).await?,
     }))
 }
 

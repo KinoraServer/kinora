@@ -50,28 +50,54 @@ async fn info(State(state): State<AppState>) -> AppResult<Json<Info>> {
     }))
 }
 
+/// How many seconds of video players buffer ahead by default.
+pub const DEFAULT_STREAM_BUFFER_SECONDS: u32 = 30;
+/// Allowed range for `stream_buffer_seconds`. Browsers cap how much they
+/// hold in memory (Chrome: about 150 MB of video), so a high-bitrate file
+/// may buffer less than asked for, never more.
+pub const STREAM_BUFFER_RANGE: std::ops::RangeInclusive<u32> = 10..=600;
+
 #[derive(Serialize, Deserialize)]
-struct GeneralSettings {
-    server_name: String,
-    default_theme: String,
+pub struct GeneralSettings {
+    pub server_name: String,
+    pub default_theme: String,
     /// "auto", "none", "nvenc", "qsv", "vaapi", "videotoolbox".
-    hw_accel: String,
+    pub hw_accel: String,
     /// Minutes between automatic library scans; 0 disables.
-    scan_interval_minutes: u32,
+    pub scan_interval_minutes: u32,
+    /// Seconds of video the player loads ahead of the playhead (HLS playback).
+    #[serde(default = "default_stream_buffer")]
+    pub stream_buffer_seconds: u32,
 }
 
-pub async fn load_general(state: &AppState) -> AppResult<(String, String, String, u32)> {
-    Ok((
-        get_setting(&state.db, "server_name").await?.unwrap_or_else(|| "Kinora".into()),
-        get_setting(&state.db, "default_theme").await?.unwrap_or_else(|| "kinora".into()),
-        get_setting(&state.db, "hw_accel").await?.unwrap_or_else(|| "auto".into()),
-        get_setting(&state.db, "scan_interval_minutes").await?.and_then(|v| v.parse().ok()).unwrap_or(60),
-    ))
+fn default_stream_buffer() -> u32 {
+    DEFAULT_STREAM_BUFFER_SECONDS
+}
+
+pub async fn load_general(state: &AppState) -> AppResult<GeneralSettings> {
+    Ok(GeneralSettings {
+        server_name: get_setting(&state.db, "server_name").await?.unwrap_or_else(|| "Kinora".into()),
+        default_theme: get_setting(&state.db, "default_theme").await?.unwrap_or_else(|| "kinora".into()),
+        hw_accel: get_setting(&state.db, "hw_accel").await?.unwrap_or_else(|| "auto".into()),
+        scan_interval_minutes: get_setting(&state.db, "scan_interval_minutes")
+            .await?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60),
+        stream_buffer_seconds: stream_buffer_seconds(state).await?,
+    })
+}
+
+/// The buffer players are told to keep (falls back to the default if unset or out of range).
+pub async fn stream_buffer_seconds(state: &AppState) -> AppResult<u32> {
+    Ok(get_setting(&state.db, "stream_buffer_seconds")
+        .await?
+        .and_then(|v| v.parse().ok())
+        .filter(|v| STREAM_BUFFER_RANGE.contains(v))
+        .unwrap_or(DEFAULT_STREAM_BUFFER_SECONDS))
 }
 
 async fn get_settings(State(state): State<AppState>, _admin: AdminUser) -> AppResult<Json<GeneralSettings>> {
-    let (server_name, default_theme, hw_accel, scan_interval_minutes) = load_general(&state).await?;
-    Ok(Json(GeneralSettings { server_name, default_theme, hw_accel, scan_interval_minutes }))
+    Ok(Json(load_general(&state).await?))
 }
 
 async fn put_settings(
@@ -86,11 +112,19 @@ async fn put_settings(
     if s.server_name.trim().is_empty() || s.server_name.len() > 80 {
         return Err(AppError::BadRequest("server name must be 1-80 characters".into()));
     }
+    if !STREAM_BUFFER_RANGE.contains(&s.stream_buffer_seconds) {
+        return Err(AppError::BadRequest(format!(
+            "stream buffer must be {}-{} seconds",
+            STREAM_BUFFER_RANGE.start(),
+            STREAM_BUFFER_RANGE.end()
+        )));
+    }
     let old_accel = get_setting(&state.db, "hw_accel").await?.unwrap_or_else(|| "auto".into());
     set_setting(&state.db, "server_name", s.server_name.trim()).await?;
     set_setting(&state.db, "default_theme", &s.default_theme).await?;
     set_setting(&state.db, "hw_accel", &s.hw_accel).await?;
     set_setting(&state.db, "scan_interval_minutes", &s.scan_interval_minutes.to_string()).await?;
+    set_setting(&state.db, "stream_buffer_seconds", &s.stream_buffer_seconds.to_string()).await?;
     if old_accel != s.hw_accel {
         spawn_detection(&state);
     }

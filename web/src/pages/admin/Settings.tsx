@@ -14,6 +14,7 @@ interface Settings {
   default_theme: string;
   hw_accel: string;
   scan_interval_minutes: number;
+  stream_buffer_seconds: number;
 }
 
 interface Hardware {
@@ -100,6 +101,16 @@ export function SettingsPage() {
                 <option value="videotoolbox">{t("admin.settings.accel_videotoolbox")}</option>
                 <option value="none">{t("admin.settings.accel_none")}</option>
               </Select>
+            </Field>
+            <Field label={t("admin.settings.stream_buffer")} help={t("admin.settings.stream_buffer_help")}>
+              <Input
+                type="number"
+                min={10}
+                max={600}
+                step={5}
+                value={form.stream_buffer_seconds}
+                onChange={(e) => setForm({ ...form, stream_buffer_seconds: Number(e.target.value) })}
+              />
             </Field>
             <Field label={t("admin.settings.scan_interval")} help={t("admin.settings.scan_interval_help")}>
               <Input
