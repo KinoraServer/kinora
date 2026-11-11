@@ -76,6 +76,10 @@ struct LibraryEdit {
     paths: Option<Vec<String>>,
 }
 
+/// Held while a library is added or edited, so two edits at once can't both
+/// pass the name and folder checks against the same old state.
+static EDITS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Trim a folder path and drop trailing slashes, so `/media/tv/` and
 /// `/media/tv` are the same folder.
 fn normalize_path(p: &str) -> String {
@@ -167,6 +171,7 @@ async fn create(
     _admin: AdminUser,
     Json(input): Json<LibraryInput>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let _edit = EDITS.lock().await;
     let name = validate_name(&state, &input.name, None).await?;
     validate_kind(&input.kind)?;
     let paths = validate_paths(&state, &input.paths, None).await?;
@@ -193,6 +198,7 @@ async fn update(
     Path(id): Path<String>,
     Json(input): Json<LibraryEdit>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let _edit = EDITS.lock().await;
     let (old_name, kind, old_paths): (String, String, String) =
         sqlx::query_as("SELECT name, kind, paths FROM libraries WHERE id = ?").bind(&id).fetch_one(&state.db).await?;
     if input.kind.as_ref().is_some_and(|k| *k != kind) {
