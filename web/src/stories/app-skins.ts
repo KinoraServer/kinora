@@ -72,8 +72,20 @@ const featured: FeaturedItem[] = demoMovies.slice(0, 3).map((m, i) => ({
   genres: ["Drama", "Mystery"],
 }));
 
+/** A long episode name: its one-line subtitle must not stretch its card. */
+const longEpisode: ItemCard = {
+  ...demoEpisodes[0],
+  id: "e-long",
+  title: "Living in the Same Place, but Not Living Together, and Other Long Episode Names",
+  series_title: "More than a Married Couple, but Not Lovers",
+};
+
 const home: HomeRow[] = [
-  { id: "continue", title: "Continue watching", items: demoEpisodes },
+  {
+    id: "continue",
+    title: "Continue watching",
+    items: [demoMovies[3], longEpisode, ...demoEpisodes],
+  },
   { id: "latest-lib-movies", title: "Recently added in Movies", items: demoMovies.map(art) },
 ];
 
