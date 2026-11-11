@@ -228,6 +228,7 @@
       "codecs": "codecs",
       "bandwidth_estimate": "bandwidth estimate",
       "target_buffer": "target buffer",
+      "track_buffered": "{{track}} buffered",
       "fragments_loaded": "fragments loaded",
       "path": "path",
       "size": "size",
