@@ -12,4 +12,3 @@ pub mod mkv;
 pub mod naming;
 pub mod playback;
 pub mod roles;
-pub mod tracks;

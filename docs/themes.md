@@ -1,8 +1,9 @@
 # Making a Kinora theme
 
-A theme is a small JSON file. Kinora ships six (Kinora, Kinora Light, Midnight, OLED Black,
-Ember, Daylight) and loads any extra ones from the `themes` folder inside your config
-directory (`/config/themes` in Docker).
+A theme is a small JSON file. Kinora ships two (Kinora and Kinora Light). More install with
+one click from the registry in Admin → Modules & themes (Midnight & Daylight, OLED Black,
+Ember; see [modules.md](modules.md)), and Kinora loads your own from the `themes` folder
+inside your config directory (`/config/themes` in Docker).
 
 1. Copy `themes/example-ocean.json.sample` to a new file ending in `.json`,
    for example `themes/sunset.json`.
@@ -36,7 +37,8 @@ one `"scheme": "light"`) and add `"pair": "<other id>"` to either of them:
 ```
 
 The theme picker then shows them as one card that follows the Light / Dark /
-System switch. Kinora + Kinora Light and Midnight + Daylight are built-in pairs.
+System switch. Kinora + Kinora Light is a built-in pair; Midnight + Daylight is one
+from the registry.
 A theme without a pair always uses its own scheme.
 
 ## Tokens

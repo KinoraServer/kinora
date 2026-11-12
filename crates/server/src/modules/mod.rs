@@ -1,14 +1,22 @@
-//! Module registry: every optional feature is a module that can be switched
-//! off in the admin UI. Built-in modules are listed here; community plugins
-//! will be registered the same way once the Wasm host exists (plan §4).
+//! Modules: every optional feature can be switched off in the admin UI.
+//!
+//! Three engines are part of the server (themes, player skins, app skins):
+//! they render in the web app and take plain files. Everything else is
+//! installed from a registry at runtime (`registry`) and runs in a sandbox
+//! (`wasm`); the files next to this one are the server's side of each
+//! extension point. See docs/modules.md.
 
-pub mod activity;
 mod app_skin_samples;
 pub mod app_skins;
-pub mod auto_tracks;
+pub mod events;
+pub mod metadata;
+pub mod registry;
 pub mod skins;
+#[cfg(test)]
+pub mod test_support;
 pub mod themes;
-pub mod tmdb;
+pub mod tracks;
+pub mod wasm;
 
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post, put};
@@ -21,17 +29,35 @@ use crate::auth::AdminUser;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-/// All built-in modules.
+/// The engines that are part of the server.
 pub fn builtin() -> Vec<ModuleInfo> {
-    vec![tmdb::info(), themes::info(), skins::info(), app_skins::info(), auto_tracks::info(), activity::info()]
+    vec![themes::info(), skins::info(), app_skins::info()]
 }
 
-pub fn find(id: &str) -> Option<ModuleInfo> {
-    builtin().into_iter().find(|m| m.id == id)
+/// How an installed module looks in the module list.
+fn installed_info(m: &wasm::InstalledModule) -> ModuleInfo {
+    ModuleInfo {
+        id: m.id.clone(),
+        name: m.name.clone(),
+        description: m.description.clone(),
+        version: m.version.clone(),
+        provides: m.spec.provides.clone(),
+        enabled_by_default: true,
+        settings: m.spec.settings.clone(),
+    }
 }
 
+/// A built-in engine or an installed module.
+async fn find(state: &AppState, id: &str) -> Option<(ModuleInfo, Source)> {
+    if let Some(m) = builtin().into_iter().find(|m| m.id == id) {
+        return Some((m, Source::Builtin));
+    }
+    state.modules.find(state, id).await.map(|m| (installed_info(&m), Source::Registry))
+}
+
+/// Is a module switched on? An installed module is on until it is switched off.
 pub async fn is_enabled(db: &SqlitePool, id: &str) -> bool {
-    let default = find(id).map(|m| m.enabled_by_default).unwrap_or(false);
+    let default = builtin().into_iter().find(|m| m.id == id).map(|m| m.enabled_by_default).unwrap_or(true);
     sqlx::query_scalar::<_, i64>("SELECT enabled FROM modules WHERE id = ?")
         .bind(id)
         .fetch_optional(db)
@@ -71,7 +97,8 @@ async fn save(db: &SqlitePool, id: &str, enabled: bool, settings: &Settings) -> 
     Ok(())
 }
 
-/// First start: copy TMDB_API_KEY from the environment into the module settings.
+/// First start: copy TMDB_API_KEY from the environment into the TMDB module's
+/// settings, where it waits until the module is installed.
 pub async fn seed_from_env(db: &SqlitePool, tmdb_key: Option<&str>) -> sqlx::Result<()> {
     if let Some(key) = tmdb_key {
         let mut s = settings(db, "tmdb").await;
@@ -91,8 +118,9 @@ pub fn routes() -> Router<AppState> {
         .route("/api/themes", get(themes::list))
         .route("/api/player-skins", get(skins::list))
         .route("/api/player/style", get(skins::get_style).put(skins::put_style))
-        .route("/api/playback/{file_id}/tracks", put(auto_tracks::remember))
-        .route("/api/track-choices", delete(auto_tracks::forget_all))
+        .route("/api/playback/{file_id}/tracks", put(tracks::remember))
+        .route("/api/track-choices", delete(tracks::forget_all))
+        .merge(registry::routes())
         .route("/api/app-skins", get(app_skins::list))
         .route("/api/app-skins/errors", post(app_skins::report_error))
         .route("/api/app-skins/{id}", delete(app_skins::remove))
@@ -111,17 +139,28 @@ pub fn routes() -> Router<AppState> {
         .route("/api/me/app-skin", get(app_skins::get_mine).put(app_skins::put_mine))
 }
 
+/// Where a module comes from.
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Source {
+    /// Part of the server.
+    Builtin,
+    /// Installed from a registry; can be uninstalled.
+    Registry,
+}
+
 #[derive(Serialize)]
 struct ModuleView {
     #[serde(flatten)]
     info: ModuleInfo,
+    source: Source,
     enabled: bool,
     /// Current values; secrets are replaced by `secrets_set`.
     values: Settings,
     secrets_set: Vec<String>,
 }
 
-async fn view(db: &SqlitePool, info: ModuleInfo) -> ModuleView {
+async fn view(db: &SqlitePool, info: ModuleInfo, source: Source) -> ModuleView {
     let enabled = is_enabled(db, &info.id).await;
     let mut values = settings(db, &info.id).await;
     let mut secrets_set = Vec::new();
@@ -134,13 +173,16 @@ async fn view(db: &SqlitePool, info: ModuleInfo) -> ModuleView {
             }
         }
     }
-    ModuleView { info, enabled, values, secrets_set }
+    ModuleView { info, source, enabled, values, secrets_set }
 }
 
 async fn list(State(state): State<AppState>, _admin: AdminUser) -> Json<Vec<ModuleView>> {
     let mut out = Vec::new();
     for m in builtin() {
-        out.push(view(&state.db, m).await);
+        out.push(view(&state.db, m, Source::Builtin).await);
+    }
+    for m in state.modules.installed(&state).await.iter() {
+        out.push(view(&state.db, installed_info(m), Source::Registry).await);
     }
     Json(out)
 }
@@ -159,7 +201,7 @@ async fn update(
     Path(id): Path<String>,
     Json(body): Json<ModuleUpdate>,
 ) -> AppResult<Json<ModuleView>> {
-    let info = find(&id).ok_or(AppError::NotFound)?;
+    let (info, source) = find(&state, &id).await.ok_or(AppError::NotFound)?;
     let mut current = settings(&state.db, &id).await;
     for (k, v) in body.settings {
         let Some(field) = info.settings.iter().find(|f| f.key == k) else {
@@ -176,5 +218,5 @@ async fn update(
     }
     let enabled = body.enabled.unwrap_or(is_enabled(&state.db, &id).await);
     save(&state.db, &id, enabled, &current).await?;
-    Ok(Json(view(&state.db, info).await))
+    Ok(Json(view(&state.db, info, source).await))
 }

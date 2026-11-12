@@ -31,6 +31,12 @@ as the current truth, never as a history.
 
 ## Components and interaction
 
+- Registry list (Admin > Modules & themes): one bordered list of packages with
+  filter chips by kind; each row shows what a module may do ("It can: ...")
+  before the Install button, so permissions are read before installing.
+  Installed rows swap Install for an Update button (only when there is one)
+  and a ghost bin; uninstalling always asks in a dialog. Built-in engines carry
+  a "Built in" badge and have no bin. (`web/src/pages/admin/Registry.tsx`)
 - Admin list rows: row actions are small ghost icon buttons (pencil to edit,
   bin to remove) after any labelled action, each with an `aria-label`. Adding
   and editing share one dialog; fields that can't change after creation stay

@@ -1,0 +1,24 @@
+# A small module used by the server's tests (modules/test_support.rs). It is
+# not part of the workspace: its built file, test_module.wasm, is committed.
+# Rebuild after changing it with ./build.sh (needs the wasm32-unknown-unknown target).
+[package]
+name = "kinora-test-module"
+version = "0.0.0"
+edition = "2021"
+license = "GPL-2.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[workspace]

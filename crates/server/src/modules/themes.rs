@@ -1,6 +1,7 @@
-//! Themes: built-in themes plus drop-in `*.json` files in `<config>/themes/`
-//! (module "custom-themes"). A theme is only design tokens, so making one is
-//! copying a file and changing colours. See docs/themes.md.
+//! Themes: Kinora's own two (dark and light) plus `*.json` files in
+//! `<config>/themes/` (module "custom-themes"): your own, and the ones
+//! installed from the registry. A theme is only design tokens, so making one
+//! is copying a file and changing colours. See docs/themes.md.
 
 use std::collections::BTreeMap;
 
@@ -15,7 +16,10 @@ pub fn info() -> ModuleInfo {
     ModuleInfo {
         id: "custom-themes".into(),
         name: "Custom themes".into(),
-        description: "Loads theme files (*.json) from the themes folder in your config directory.".into(),
+        description:
+            "Shows the themes you install from the registry, and your own theme files (*.json) from the themes \
+                      folder in your config directory."
+                .into(),
         version: env!("CARGO_PKG_VERSION").into(),
         provides: vec![ExtensionPoint::Theme],
         enabled_by_default: true,
@@ -83,100 +87,10 @@ pub fn builtin_themes() -> Vec<Theme> {
                 ("font-sans", FONT),
             ],
         ),
-        theme(
-            "midnight",
-            "Midnight",
-            "dark",
-            &[
-                ("background", "oklch(0.16 0.01 260)"),
-                ("foreground", "oklch(0.97 0 0)"),
-                ("card", "oklch(0.21 0.012 260)"),
-                ("card-foreground", "oklch(0.97 0 0)"),
-                ("muted", "oklch(0.27 0.012 260)"),
-                ("muted-foreground", "oklch(0.72 0.01 260)"),
-                ("primary", "oklch(0.72 0.16 250)"),
-                ("primary-foreground", "oklch(0.15 0.02 250)"),
-                ("accent", "oklch(0.3 0.03 260)"),
-                ("accent-foreground", "oklch(0.97 0 0)"),
-                ("border", "oklch(0.3 0.012 260)"),
-                ("ring", "oklch(0.72 0.16 250)"),
-                ("destructive", "oklch(0.63 0.21 25)"),
-                ("radius", "0.75rem"),
-                ("font-sans", FONT),
-            ],
-        ),
-        theme(
-            "oled",
-            "OLED Black",
-            "dark",
-            &[
-                ("background", "oklch(0 0 0)"),
-                ("foreground", "oklch(0.96 0 0)"),
-                ("card", "oklch(0.13 0 0)"),
-                ("card-foreground", "oklch(0.96 0 0)"),
-                ("muted", "oklch(0.2 0 0)"),
-                ("muted-foreground", "oklch(0.68 0 0)"),
-                ("primary", "oklch(0.96 0 0)"),
-                ("primary-foreground", "oklch(0 0 0)"),
-                ("accent", "oklch(0.22 0 0)"),
-                ("accent-foreground", "oklch(0.96 0 0)"),
-                ("border", "oklch(0.24 0 0)"),
-                ("ring", "oklch(0.8 0 0)"),
-                ("destructive", "oklch(0.63 0.21 25)"),
-                ("radius", "0.5rem"),
-                ("font-sans", FONT),
-            ],
-        ),
-        theme(
-            "ember",
-            "Ember",
-            "dark",
-            &[
-                ("background", "oklch(0.17 0.015 40)"),
-                ("foreground", "oklch(0.96 0.01 70)"),
-                ("card", "oklch(0.22 0.02 40)"),
-                ("card-foreground", "oklch(0.96 0.01 70)"),
-                ("muted", "oklch(0.28 0.02 40)"),
-                ("muted-foreground", "oklch(0.74 0.03 60)"),
-                ("primary", "oklch(0.74 0.17 55)"),
-                ("primary-foreground", "oklch(0.18 0.03 40)"),
-                ("accent", "oklch(0.32 0.04 40)"),
-                ("accent-foreground", "oklch(0.96 0.01 70)"),
-                ("border", "oklch(0.32 0.025 40)"),
-                ("ring", "oklch(0.74 0.17 55)"),
-                ("destructive", "oklch(0.63 0.21 25)"),
-                ("radius", "1rem"),
-                ("font-sans", FONT),
-            ],
-        ),
-        theme(
-            "daylight",
-            "Daylight",
-            "light",
-            &[
-                ("background", "oklch(0.985 0.002 260)"),
-                ("foreground", "oklch(0.2 0.015 260)"),
-                ("card", "oklch(1 0 0)"),
-                ("card-foreground", "oklch(0.2 0.015 260)"),
-                ("muted", "oklch(0.95 0.005 260)"),
-                ("muted-foreground", "oklch(0.48 0.015 260)"),
-                ("primary", "oklch(0.55 0.18 255)"),
-                ("primary-foreground", "oklch(0.99 0 0)"),
-                ("accent", "oklch(0.93 0.01 260)"),
-                ("accent-foreground", "oklch(0.2 0.015 260)"),
-                ("border", "oklch(0.9 0.006 260)"),
-                ("ring", "oklch(0.55 0.18 255)"),
-                ("destructive", "oklch(0.58 0.22 25)"),
-                ("radius", "0.75rem"),
-                ("font-sans", FONT),
-            ],
-        ),
     ];
     // Paired themes show as one choice that follows light/dark mode.
-    for (dark, light) in [("kinora", "kinora-light"), ("midnight", "daylight")] {
-        if let Some(t) = themes.iter_mut().find(|t| t.id == dark) {
-            t.pair = Some(light.into());
-        }
+    if let Some(t) = themes.iter_mut().find(|t| t.id == "kinora") {
+        t.pair = Some("kinora-light".into());
     }
     themes
 }

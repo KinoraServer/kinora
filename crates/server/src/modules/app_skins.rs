@@ -45,9 +45,9 @@ pub fn info() -> ModuleInfo {
     ModuleInfo {
         id: MODULE_ID.into(),
         name: "Custom app skins".into(),
-        description: "Loads whole-app skins (your own markup and CSS for the navigation, home, library, detail and \
-                      search pages) from the app-skins folder in your config directory. Admin pages always keep the \
-                      standard look."
+        description: "Whole-app skins (markup and CSS for the navigation, home, library, detail and search pages): \
+                      the ones you install from the registry, and your own from the app-skins folder in your config \
+                      directory. Admin pages always keep the standard look."
             .into(),
         version: env!("CARGO_PKG_VERSION").into(),
         provides: vec![ExtensionPoint::AppSkin],
@@ -67,8 +67,13 @@ pub fn info() -> ModuleInfo {
 // ---------------------------------------------------------------------------
 
 /// The starter skins, written as `<name>.sample` folders on first start.
+/// Tests also get Marquee, a full skin to exercise the engine with.
 pub fn samples() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
-    vec![("marquee", super::app_skin_samples::MARQUEE.to_vec()), ("blank", super::app_skin_samples::BLANK.to_vec())]
+    #[allow(unused_mut)]
+    let mut all = vec![("blank", super::app_skin_samples::BLANK.to_vec())];
+    #[cfg(test)]
+    all.push(("marquee", super::app_skin_samples::MARQUEE.to_vec()));
+    all
 }
 
 /// Write a starter into `dir/<folder>`, with a new id when given. Also adds
@@ -78,7 +83,7 @@ pub fn write_starter(dir: &Path, from: &str, folder: &str, id: Option<&str>) -> 
         .into_iter()
         .find(|(n, _)| *n == from)
         .map(|(_, f)| f)
-        .ok_or_else(|| std::io::Error::other(format!("unknown starter {from:?} (marquee or blank)")))?;
+        .ok_or_else(|| std::io::Error::other(format!("unknown starter {from:?} (there is one: blank)")))?;
     let target = dir.join(folder);
     std::fs::create_dir_all(&target)?;
     for (path, text) in files {
@@ -216,6 +221,28 @@ fn load_one(dir: &Path, folder: &str) -> LoadedSkin {
         report.valid = false;
     }
     LoadedSkin { folder: folder.into(), dir: dir.to_path_buf(), source, report, hash }
+}
+
+/// Check a skin about to be installed from a registry: it must be usable and
+/// carry the package's id. `dir` is the staging folder holding its files.
+pub fn check_package(dir: &Path, id: &str) -> Result<(), String> {
+    let skin = load_one(dir, id);
+    if skin.manifest().map(|m| m.id.as_str()) != Some(id) {
+        return Err("the skin's id must be the package's id".into());
+    }
+    if !skin.usable() {
+        let first = skin.report.issues.iter().find(|i| i.severity == kinora_plugin_api::app_skin::Severity::Error);
+        return Err(format!("the skin has errors{}", first.map(|i| format!(": {i}")).unwrap_or_default()));
+    }
+    Ok(())
+}
+
+/// A skin's folder is gone: stop using it as the server's skin.
+pub async fn forget(state: &AppState, id: &str) -> sqlx::Result<()> {
+    if get_setting(&state.db, ACTIVE_KEY).await?.as_deref() == Some(id) {
+        set_setting(&state.db, ACTIVE_KEY, "").await?;
+    }
+    Ok(())
 }
 
 /// Cheap change detector: every file's path, size and modified time.
@@ -795,9 +822,9 @@ pub async fn remove(
         return Err(AppError::Forbidden);
     }
     std::fs::remove_dir_all(&skin.dir)?;
-    if get_setting(&state.db, ACTIVE_KEY).await?.as_deref() == Some(id.as_str()) {
-        set_setting(&state.db, ACTIVE_KEY, "").await?;
-    }
+    forget(&state, &id).await?;
+    // If it came from the registry, it is no longer installed.
+    super::registry::forget_missing(&state).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1053,8 +1080,8 @@ pub async fn put_mine(
 // ---------------------------------------------------------------------------
 
 const CLI_HELP: &str = "Usage:
-  kinora skin new <id> [--from marquee|blank] [--dir <folder>]
-      Create a new app skin folder <folder>/<id> from a starter (default: blank).
+  kinora skin new <id> [--dir <folder>]
+      Create a new app skin folder <folder>/<id> from the Blank starter.
   kinora skin check <folder> [--json]
       Check a skin folder the same way the server does. Exits with 1 on errors.
 ";
@@ -1163,7 +1190,7 @@ mod tests {
     fn samples_are_not_loaded_and_bad_skins_are_listed_but_unusable() {
         let dir = tempfile::tempdir().unwrap();
         prepare_dir(dir.path());
-        assert!(dir.path().join("marquee.sample/skin.json").exists());
+        assert!(dir.path().join("blank.sample/skin.json").exists());
         assert!(load_all(dir.path()).is_empty());
         let bad = dir.path().join("bad");
         std::fs::create_dir_all(&bad).unwrap();

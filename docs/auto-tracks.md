@@ -1,12 +1,13 @@
 # Auto audio & subtitles
 
-Built-in module `auto-tracks` (Admin → Modules → "Auto audio & subtitles"). It does what the
-Plex-Auto-Languages tool does for Plex, but inside the server, so there is nothing extra to run.
+Module `auto-tracks`: install "Auto audio & subtitles" from the list in Admin → Modules & themes
+(see [modules.md](modules.md)). It does what the Plex-Auto-Languages tool does for Plex, but
+inside the server, so there is nothing extra to run.
 
 ## What it does
 
 - When a viewer changes the audio or subtitle track in the player, the client sends the pair to
-  `PUT /api/playback/{file_id}/tracks`. The server saves a description of the tracks (language,
+  `PUT /api/playback/{file_id}/tracks`. The module saves a description of the tracks (language,
   title, codec, channels, forced and SDH flags), never the stream index, because indexes differ
   between files.
 - The choice is saved for that viewer for the episode's season, its show and its library (a movie
@@ -30,7 +31,8 @@ A choice is skipped if nothing in the new file matches it, and the next one is t
 
 ## Matching
 
-The rules live in `crates/core/src/tracks.rs` with unit tests.
+The rules live in the module (`packages/auto-tracks` in the kinora-registry repository) with
+unit tests.
 
 - The language must match (`en` and `eng`, `ger` and `deu` count as the same). Otherwise there is
   no opinion and the client uses the file's default track.

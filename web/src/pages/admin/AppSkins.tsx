@@ -75,7 +75,6 @@ export interface SkinList {
 
 /** Tooltips for the starter skins the server ships. */
 const STARTERS = {
-  marquee: "admin.app_skins.starter_marquee",
   blank: "admin.app_skins.starter_blank",
 } as const;
 

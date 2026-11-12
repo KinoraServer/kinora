@@ -27,9 +27,10 @@ the theme's colours as CSS variables, and can bundle its own player.
 ## Quick start
 
 1. Turn on **Admin → Modules & themes → Custom app skins**.
-2. In the new **App skins** card, press **Start from Marquee** (a full
-   streaming look) or **Start from Blank** (the smallest skin that works).
-   This copies the starter to `<config>/app-skins/<id>/`.
+2. Install **Marquee** (a full streaming look) from the list of packages on
+   the same page, or, to write your own, press **Start from Blank** in the new
+   **App skins** card (the smallest skin that works). Blank is copied to
+   `<config>/app-skins/<id>/`.
 3. Press **Preview**. Only you see the skin, and while previewing, edits to the
    files show up within two seconds.
 4. Edit the files. When you're happy, press **Use for everyone**.
@@ -37,7 +38,7 @@ the theme's colours as CSS variables, and can bundle its own player.
 From a terminal you can do the same without the web app:
 
 ```sh
-kinora skin new my-skin --from marquee   # or --from blank; --dir to choose where
+kinora skin new my-skin                  # from the Blank starter; --dir to choose where
 kinora skin check my-skin                # errors and warnings, like a compiler
 kinora skin check my-skin --json         # the same, for editors and scripts
 ```
@@ -333,8 +334,11 @@ Marquee's carousel also stops when its `hero-rotate` option is `false`.
 ## Installing, previewing and sharing
 
 - **Folder**: put the skin folder in `<config>/app-skins/` and press refresh in
-  the admin card. Folders ending in `.sample` are ignored (the starters are
-  kept there as `marquee.sample` and `blank.sample`).
+  the admin card. Folders ending in `.sample` are ignored (the Blank starter
+  is kept there as `blank.sample`).
+- **Registry**: skins published in the registry install with one click
+  ([modules.md](modules.md)). To change an installed skin, copy its folder
+  under a new id first: an update replaces the installed one.
 - **Upload**: in the admin card, **Upload a folder** or **Upload a .zip**. The
   skin is checked first and only installed if it has no errors. Uploading a
   skin with an id that's already installed asks before replacing it.

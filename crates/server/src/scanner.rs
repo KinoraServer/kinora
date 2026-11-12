@@ -23,7 +23,6 @@ use tokio::sync::{RwLock, Semaphore};
 
 use crate::db::{new_id, now_ms};
 use crate::modules;
-use crate::modules::tmdb::Tmdb;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -586,7 +585,18 @@ async fn remove_orphans(db: &SqlitePool, library_id: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
-async fn apply_metadata(db: &SqlitePool, item_id: &str, m: &Metadata, keep_title: bool) -> sqlx::Result<()> {
+/// Where a provider's id for an item is kept in `items.provider_ids` (module ids need no escaping).
+fn provider_path(provider: &str) -> String {
+    format!("$.\"{provider}\"")
+}
+
+async fn apply_metadata(
+    db: &SqlitePool,
+    provider: &str,
+    item_id: &str,
+    m: &Metadata,
+    keep_title: bool,
+) -> sqlx::Result<()> {
     let title = if keep_title { None } else { m.title.clone() };
     sqlx::query(
         "UPDATE items SET
@@ -596,7 +606,7 @@ async fn apply_metadata(db: &SqlitePool, item_id: &str, m: &Metadata, keep_title
             genres = ?, runtime_minutes = COALESCE(?, runtime_minutes), release_date = COALESCE(?, release_date),
             poster_url = COALESCE(?, poster_url), backdrop_url = COALESCE(?, backdrop_url),
             thumb_url = COALESCE(?, thumb_url), logo_url = COALESCE(?, logo_url),
-            provider_ids = json_set(provider_ids, '$.tmdb', ?),
+            provider_ids = json_set(provider_ids, ?, ?),
             metadata_status = 'matched', updated_at = ?
          WHERE id = ?",
     )
@@ -614,6 +624,7 @@ async fn apply_metadata(db: &SqlitePool, item_id: &str, m: &Metadata, keep_title
     .bind(&m.backdrop_url)
     .bind(&m.thumb_url)
     .bind(&m.logo_url)
+    .bind(provider_path(provider))
     .bind(&m.provider_id)
     .bind(now_ms())
     .bind(item_id)
@@ -635,7 +646,8 @@ struct PendingItem {
     year: Option<i64>,
     season_number: Option<i64>,
     episode_number: Option<i64>,
-    series_tmdb: Option<String>,
+    /// The provider's id for the episode's series.
+    series_provider_id: Option<String>,
 }
 
 /// Look up one item. Returns `Ok(None)` when the provider has no match.
@@ -649,36 +661,31 @@ async fn lookup(provider: &dyn MetadataProvider, item: &PendingItem) -> anyhow::
                 None => None,
             }
         }
-        _ => match (&item.series_tmdb, item.season_number, item.episode_number) {
+        _ => match (&item.series_provider_id, item.season_number, item.episode_number) {
             (Some(series), Some(s), Some(e)) => provider.episode(series, s as u32, e as u32).await?,
             _ => None,
         },
     })
 }
 
-/// Fill in metadata for items that don't have it yet, using the enabled
-/// metadata provider (TMDB today; any `MetadataProvider` module later).
+/// Fill in metadata for items that don't have it yet, using the installed
+/// metadata provider module (TMDB, or any other `metadata_provider`).
 /// Lookups run several at a time and progress is shown in the library list.
 pub async fn fetch_metadata(state: &AppState, library_id: &str) -> anyhow::Result<()> {
-    if !modules::is_enabled(&state.db, "tmdb").await {
-        return Ok(());
-    }
-    let settings = modules::settings(&state.db, "tmdb").await;
-    let Some(provider) = Tmdb::from_settings(state.http.clone(), &settings) else {
+    let Some(provider) = modules::metadata::provider(state).await else {
         return Ok(());
     };
-    let provider: Arc<dyn MetadataProvider> = Arc::new(provider);
 
     // Movies and series first, so episodes can use their series' id.
     for (phase, kinds) in [("fetching titles", vec!["movie", "series"]), ("fetching episodes", vec!["episode"])] {
         let placeholders = kinds.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
             "SELECT i.id, i.kind, i.title, i.year, i.season_number, i.episode_number,
-                    json_extract(s.provider_ids, '$.tmdb') AS series_tmdb
+                    json_extract(s.provider_ids, ?) AS series_provider_id
              FROM items i LEFT JOIN items s ON s.id = i.series_id
              WHERE i.library_id = ? AND i.metadata_status = 'pending' AND i.kind IN ({placeholders})"
         );
-        let mut q = sqlx::query_as::<_, PendingItem>(&sql).bind(library_id);
+        let mut q = sqlx::query_as::<_, PendingItem>(&sql).bind(provider_path(provider.id())).bind(library_id);
         for k in &kinds {
             q = q.bind(*k);
         }
@@ -711,7 +718,7 @@ pub async fn fetch_metadata(state: &AppState, library_id: &str) -> anyhow::Resul
         while let Some(joined) = tasks.join_next().await {
             let Ok((item, result)) = joined else { continue };
             match result {
-                Ok(Some(m)) => apply_metadata(&state.db, &item.id, &m, false).await?,
+                Ok(Some(m)) => apply_metadata(&state.db, provider.id(), &item.id, &m, false).await?,
                 Ok(None) => mark_unmatched(&state.db, &item.id).await?,
                 Err(e) if e.to_string().contains("rejected the API key") => {
                     tasks.abort_all();
