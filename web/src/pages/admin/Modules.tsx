@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, ErrorNote, Switch } from "@/components/ui/card";
 import { ThemePicker } from "@/components/ThemePicker";
 import { AppSkinsCard } from "@/pages/admin/AppSkins";
+import { RegistryCard } from "@/pages/admin/Registry";
 import { useSkin } from "@/skin-engine/SkinProvider";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -29,6 +30,8 @@ interface ModuleView {
   version: string;
   provides: string[];
   enabled: boolean;
+  /** Part of the server, or installed from the registry. */
+  source: "builtin" | "registry";
   settings: SettingField[];
   values: Record<string, string>;
   secrets_set: string[];
@@ -37,6 +40,14 @@ interface ModuleView {
 export function ModulesPage() {
   const { t } = useTranslation();
   const { data, reload, error } = useApi<ModuleView[]>("api/modules");
+  const theme = useTheme();
+  // Bumped when a package is installed or removed, so the cards below look again.
+  const [packages, setPackages] = useState(0);
+  const packagesChanged = () => {
+    reload();
+    theme.reload();
+    setPackages((n) => n + 1);
+  };
   return (
     <div className="space-y-6">
       <Card>
@@ -53,16 +64,18 @@ export function ModulesPage() {
         </div>
       </Card>
 
+      <RegistryCard onChanged={packagesChanged} />
+
       <ErrorNote message={error} />
       {data?.map((m) => (
         <ModuleCard key={m.id} module={m} onChange={reload} />
       ))}
 
-      {data?.find((m) => m.id === "app-skins")?.enabled && <AppSkinsCard />}
+      {data?.find((m) => m.id === "app-skins")?.enabled && <AppSkinsCard key={packages} />}
 
-      <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} />
+      <PlayerStyleCard skinsEnabled={data?.find((m) => m.id === "player-skins")?.enabled ?? false} refresh={packages} />
 
-      <p className="text-xs text-muted-foreground">{t("admin.modules.tmdb")}</p>
+      {data?.some((m) => m.id === "tmdb") && <p className="text-xs text-muted-foreground">{t("admin.modules.tmdb")}</p>}
     </div>
   );
 }
@@ -81,11 +94,11 @@ const STYLE_DESC_KEY: Record<
   pro: "admin.modules.style_desc_pro",
 };
 
-function PlayerStyleCard({ skinsEnabled }: { skinsEnabled: boolean }) {
+function PlayerStyleCard({ skinsEnabled, refresh }: { skinsEnabled: boolean; refresh: number }) {
   const { t } = useTranslation();
   const setting = useApi<PlayerStyleSetting>("api/player/style");
-  // Refetch when the skins module is switched on or off so the list matches.
-  const { data: skins } = useApi<PlayerSkin[]>("api/player-skins", [skinsEnabled]);
+  // Refetch when the skins module is switched on or off, or a skin is installed or removed.
+  const { data: skins } = useApi<PlayerSkin[]>("api/player-skins", [skinsEnabled, refresh]);
   const { themes, current } = useTheme();
   const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -199,10 +212,11 @@ function ModuleCard({ module: m, onChange }: { module: ModuleView; onChange: () 
               {m.name} <span className="text-xs text-muted-foreground">v{m.version}</span>
             </p>
             <p className="text-sm text-muted-foreground">{m.description}</p>
-            <div className="mt-2 flex gap-1">
+            <div className="mt-2 flex flex-wrap gap-1">
               {m.provides.map((p) => (
                 <Badge key={p}>{p.replace(/_/g, " ")}</Badge>
               ))}
+              {m.source === "builtin" && <Badge>{t("admin.registry.builtin")}</Badge>}
             </div>
           </div>
         </div>

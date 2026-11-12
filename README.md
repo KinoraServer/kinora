@@ -31,8 +31,9 @@ from `/media` in **Admin → Libraries**.
   machine has none, e.g. Docker Desktop on a Mac).
 - **NVIDIA GPU**: add `--runtime=nvidia` (NVIDIA Container Toolkit, or the
   "Nvidia Driver" plugin on Unraid).
-- **Artwork and descriptions**: add a free TMDB API key in
-  **Admin → Modules** (or pass `-e TMDB_API_KEY=...`).
+- **Artwork and descriptions**: install **TMDB metadata** in
+  **Admin → Modules & themes** and add a free TMDB API key there (or pass
+  `-e TMDB_API_KEY=...`).
 - **Transcode temp files**: optionally mount fast storage or a RAM disk at
   `/transcode`.
 
@@ -61,7 +62,7 @@ settings. HTTPS is left to the proxy.
 
 - First-run setup, sign-in, users with roles (owner, admin, editor, viewer)
 - Movie and TV libraries, incremental scans (scheduled, plus on demand)
-- TMDB metadata and artwork (module, can be switched off)
+- TMDB metadata and artwork (a module you install from the registry)
 - Direct play with seeking; when needed, remux or transcode to HLS
 - GPU detection with a real test encode per backend: NVENC, Quick Sync,
   VAAPI, VideoToolbox, with CPU fallback
@@ -72,7 +73,8 @@ settings. HTTPS is left to the proxy.
 - Dolby Vision profile 8.1 plays as HDR10 on HDR screens without transcoding
 - Embedded text subtitles, audio track switching, resume and watched state
 - Admin dashboard with active streams and activity log
-- Modules you can switch off; themes (4 built in, plus your own JSON files)
+- Modules, themes and skins you install and uninstall at runtime from a
+  registry ([docs/modules.md](docs/modules.md)); your own themes as JSON files
 
 See [docs/plan.md](docs/plan.md) for the roadmap and
 [docs/decisions.md](docs/decisions.md) for the architecture choices.
@@ -116,7 +118,7 @@ crates/core/        pure logic, no I/O: file name parsing, ffprobe parsing,
                     the playback decision engine, ffmpeg command builder
 crates/plugin-api/  extension points shared by modules (metadata, themes, events)
 crates/server/      the binary: HTTP API (axum), SQLite (sqlx), scanner,
-                    transcoder, hardware detection, built-in modules
+                    transcoder, hardware detection, module host
 web/                React + Tailwind web app (Vite)
 packaging/          Unraid template
 docs/               plan, decisions, theme, app skin and Storybook guides

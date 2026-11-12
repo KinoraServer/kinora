@@ -106,10 +106,10 @@ struct StartResponse {
     duration_ms: u64,
     subtitles: Vec<SubtitleTrack>,
     hardware: String,
-    /// Tracks picked from what this viewer chose on other episodes (module
-    /// "auto-tracks"). Missing when there's nothing to go on.
+    /// Tracks picked from what this viewer chose on other episodes (a track
+    /// selection module such as "auto-tracks"). Missing when there's nothing to go on.
     #[serde(skip_serializing_if = "Option::is_none")]
-    auto_tracks: Option<crate::modules::auto_tracks::AutoTracks>,
+    auto_tracks: Option<crate::modules::tracks::AutoTracks>,
     /// Seconds of video to buffer ahead (admin setting "stream_buffer_seconds").
     buffer_seconds: u32,
 }
@@ -125,7 +125,7 @@ async fn start(
     let file = load_file(&state, &file_id).await?;
     // The viewer's remembered tracks for this show, unless the player asked for a specific audio track.
     let auto_tracks = if req.audio_index.is_none() {
-        crate::modules::auto_tracks::pick(&state.db, &user.id, &file.item_id, &file.info).await
+        crate::modules::tracks::pick(&state, &user.id, &file.item_id, &file.info).await
     } else {
         None
     };
@@ -153,7 +153,7 @@ async fn start(
             codec: s.codec.clone(),
             is_default: s.is_default,
             is_forced: s.is_forced,
-            is_hearing_impaired: kinora_core::tracks::is_hearing_impaired(s),
+            is_hearing_impaired: kinora_core::media::is_hearing_impaired(s),
             supported: s.is_text,
         })
         .collect();

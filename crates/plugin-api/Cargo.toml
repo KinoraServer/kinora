@@ -1,6 +1,6 @@
 [package]
 name = "kinora-plugin-api"
-description = "Extension points shared by built-in modules and (later) community plugins."
+description = "Extension points, the module ABI and the registry format shared by the server and its modules."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

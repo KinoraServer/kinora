@@ -6,6 +6,8 @@ use tokio::sync::{broadcast, RwLock};
 
 use crate::config::Config;
 use crate::hw::HardwareReport;
+use crate::modules::registry::Registry;
+use crate::modules::wasm::ModuleHost;
 use crate::now_playing::NowPlaying;
 use crate::scanner::ScanManager;
 use crate::transcode::TranscodeManager;
@@ -21,6 +23,10 @@ pub struct AppState {
     pub now_playing: NowPlaying,
     pub scans: ScanManager,
     pub http: reqwest::Client,
+    /// Runs installed modules.
+    pub modules: ModuleHost,
+    /// Where packages are installed from.
+    pub registry: Registry,
     pub events: broadcast::Sender<ServerEvent>,
 }
 

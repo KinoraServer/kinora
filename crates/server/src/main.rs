@@ -63,6 +63,8 @@ pub async fn build_state(config: Config) -> anyhow::Result<AppState> {
     {
         std::fs::create_dir_all(dir)?;
     }
+    // Downloads an earlier run didn't finish.
+    let _ = std::fs::remove_dir_all(config.staging_dir());
     let example = config.themes_dir().join("example-ocean.json.sample");
     if !example.exists() {
         let _ = std::fs::write(&example, modules::themes::EXAMPLE_THEME);
@@ -86,6 +88,8 @@ pub async fn build_state(config: Config) -> anyhow::Result<AppState> {
         now_playing: NowPlaying::new(),
         scans: ScanManager::default(),
         http,
+        modules: modules::wasm::ModuleHost::new()?,
+        registry: modules::registry::Registry::default(),
         events,
     })
 }
@@ -109,7 +113,8 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.bind, config.port);
     let state = build_state(config).await?;
 
-    modules::activity::spawn(state.db.clone(), state.events.subscribe());
+    modules::events::spawn(state.clone());
+    modules::registry::spawn_adoption(state.clone());
     system::spawn_detection(&state);
     spawn_scheduled_scans(state.clone());
 

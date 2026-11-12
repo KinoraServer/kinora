@@ -1,10 +1,11 @@
 //! The plugin API.
 //!
 //! Every optional feature (TMDB metadata, themes, notifications, ...) is a
-//! *module* that implements one or more of the traits below. Built-in modules
-//! are compiled in today; community plugins will implement the same
-//! interfaces as WebAssembly components later (see docs/plan.md §4), so this
-//! crate is the contract both sides share.
+//! *module* that provides one or more of the extension points below. A few
+//! engines (themes, player skins, app skins) are part of the server; the rest
+//! are packages installed from a registry at runtime: WebAssembly modules for
+//! server logic, plain files for themes and skins (see [`registry`] and
+//! docs/modules.md).
 //!
 //! Versioning: bump [`API_VERSION`] (semver) on any change. Breaking changes
 //! bump the major version once 1.0 is declared.
@@ -12,11 +13,12 @@
 use std::collections::BTreeMap;
 
 pub mod app_skin;
+pub mod registry;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: &str = "0.1.0";
+pub const API_VERSION: &str = "0.2.0";
 
 /// Describes a module to the registry and the admin UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,11 +48,23 @@ pub enum ExtensionPoint {
     AppSkin,
 }
 
+impl ExtensionPoint {
+    /// Extension points an installed (WebAssembly) module can provide. The
+    /// others are served by engines inside the server and take plain files.
+    pub fn is_module_point(self) -> bool {
+        matches!(
+            self,
+            ExtensionPoint::MetadataProvider | ExtensionPoint::EventSubscriber | ExtensionPoint::TrackSelection
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingField {
     pub key: String,
     pub label: String,
     pub kind: SettingKind,
+    #[serde(default)]
     pub help: Option<String>,
     /// Value used until the admin saves one ("true" / "false" for bools).
     #[serde(default)]
@@ -74,6 +88,7 @@ pub type Settings = BTreeMap<String, String>;
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Metadata {
     /// The provider's own id for this item (e.g. a TMDB id).
     pub provider_id: String,

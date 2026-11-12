@@ -69,7 +69,7 @@ pub struct SubtitleStream {
     pub is_default: bool,
     pub is_forced: bool,
     /// SDH / closed captions. Missing in files scanned before it was recorded;
-    /// `tracks::is_hearing_impaired` also looks at the title.
+    /// [`is_hearing_impaired`] also looks at the title.
     #[serde(default)]
     pub is_hearing_impaired: bool,
     /// Text subs (srt, ass, webvtt) can be converted; image subs (PGS, VobSub) must be burned in.
@@ -276,6 +276,17 @@ fn parse_u64(v: Option<&Value>) -> Option<u64> {
     v.as_u64().or_else(|| v.as_str()?.parse().ok())
 }
 
+/// SDH / closed captions: the ffprobe flag, or a title that says so.
+pub fn is_hearing_impaired(s: &SubtitleStream) -> bool {
+    let words = |t: &str| -> Vec<String> {
+        t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_lowercase).collect()
+    };
+    s.is_hearing_impaired
+        || s.title.as_deref().map(words).is_some_and(|w| {
+            w.iter().any(|w| matches!(w.as_str(), "sdh" | "cc" | "hi")) || w.windows(2).any(|p| p[0] == "hearing")
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,5 +355,24 @@ mod tests {
     fn rejects_garbage() {
         assert!(parse_ffprobe("not json").is_err());
         assert!(parse_ffprobe("{}").is_err());
+    }
+
+    #[test]
+    fn hearing_impaired_from_the_flag_or_the_title() {
+        let sub = |title: Option<&str>, flag: bool| SubtitleStream {
+            index: 3,
+            codec: "srt".into(),
+            language: Some("eng".into()),
+            title: title.map(Into::into),
+            is_default: false,
+            is_forced: false,
+            is_hearing_impaired: flag,
+            is_text: true,
+        };
+        assert!(is_hearing_impaired(&sub(None, true)));
+        assert!(is_hearing_impaired(&sub(Some("English [SDH]"), false)));
+        assert!(is_hearing_impaired(&sub(Some("For the hearing impaired"), false)));
+        assert!(!is_hearing_impaired(&sub(Some("English"), false)));
+        assert!(!is_hearing_impaired(&sub(Some("Chinese"), false)), "\"hi\" must be a whole word");
     }
 }

@@ -30,8 +30,8 @@ pub fn info() -> ModuleInfo {
     ModuleInfo {
         id: "player-skins".into(),
         name: "Custom player skins".into(),
-        description: "Loads custom video player skins (your own markup and CSS) from the player-skins folder in your \
-                      config directory."
+        description: "Shows the video player skins you install from the registry, and your own (markup and CSS) \
+                      from the player-skins folder in your config directory."
             .into(),
         version: env!("CARGO_PKG_VERSION").into(),
         provides: vec![ExtensionPoint::PlayerSkin],
@@ -53,7 +53,7 @@ pub fn write_example(dir: &Path) {
     }
 }
 
-fn load_one(dir: &Path) -> Result<PlayerSkin, String> {
+pub fn load_one(dir: &Path) -> Result<PlayerSkin, String> {
     let json = std::fs::read_to_string(dir.join("skin.json")).map_err(|e| format!("skin.json: {e}"))?;
     let mut skin: PlayerSkin = serde_json::from_str(&json).map_err(|e| format!("skin.json: {e}"))?;
     skin.html = std::fs::read_to_string(dir.join("skin.html")).map_err(|e| format!("skin.html: {e}"))?;

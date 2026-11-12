@@ -33,6 +33,11 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 rust-embed = { version = "8.13.0", features = ["mime-guess"] }
 time = "0.3"
 tower = { version = "0.5", features = ["util"] }
+# Runs installed modules (WebAssembly) in a sandbox (modules/wasm.rs). An interpreter: no JIT, works on every platform.
+# portable-dispatch: a plain loop instead of tail calls, which need compiler optimisations to not overflow the stack.
+wasmi = { version = "2", default-features = false, features = ["std", "stable", "validate", "portable-dispatch"] }
+# Checks the registry index's signature (modules/registry.rs).
+ed25519-dalek = { version = "3", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # posix_fadvise, to let go of a video's page cache when playback ends (page_cache.rs).
