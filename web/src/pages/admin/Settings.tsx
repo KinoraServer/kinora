@@ -8,14 +8,7 @@ import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useApi } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
-
-interface Settings {
-  server_name: string;
-  default_theme: string;
-  hw_accel: string;
-  scan_interval_minutes: number;
-  stream_buffer_seconds: number;
-}
+import type { SystemSettings } from "@/lib/types";
 
 interface Hardware {
   profile: { accel: { kind: string; device?: string | null }; tonemapper: string };
@@ -42,10 +35,10 @@ const ACCEL_LABEL: Record<
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const { data, error } = useApi<Settings>("api/system/settings");
+  const { data, error } = useApi<SystemSettings>("api/system/settings");
   const hardware = useApi<Hardware>("api/system/hardware");
   const { themes, reload: reloadThemes } = useTheme();
-  const [form, setForm] = useState<Settings | null>(null);
+  const [form, setForm] = useState<SystemSettings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -110,14 +103,6 @@ export function SettingsPage() {
                 step={5}
                 value={form.stream_buffer_seconds}
                 onChange={(e) => setForm({ ...form, stream_buffer_seconds: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label={t("admin.settings.scan_interval")} help={t("admin.settings.scan_interval_help")}>
-              <Input
-                type="number"
-                min={0}
-                value={form.scan_interval_minutes}
-                onChange={(e) => setForm({ ...form, scan_interval_minutes: Number(e.target.value) })}
               />
             </Field>
             <div className="flex items-center gap-3 sm:col-span-2">

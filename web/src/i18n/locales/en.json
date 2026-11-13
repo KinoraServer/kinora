@@ -361,7 +361,11 @@
       "folders_removed_one": "Kinora will rescan this library after saving. Titles only found in the removed folder will leave the library. Files you moved into one of its other folders keep their details and watch progress.",
       "folders_removed_other": "Kinora will rescan this library after saving. Titles only found in the {{count}} removed folders will leave the library. Files you moved into one of its other folders keep their details and watch progress.",
       "add_and_scan": "Add and scan",
-      "save_and_scan": "Save and scan"
+      "save_and_scan": "Save and scan",
+      "scan_schedule": "Scan schedule",
+      "scan_schedule_help": "How often Kinora rescans every library.",
+      "scan_interval": "Scan libraries every (minutes)",
+      "scan_interval_help": "0 turns automatic scans off."
     },
     "users": {
       "title": "Users",
@@ -398,8 +402,6 @@
       "accel_label_qsv": "Intel Quick Sync",
       "accel_label_vaapi": "VAAPI (Intel / AMD)",
       "accel_label_video_toolbox": "Apple VideoToolbox",
-      "scan_interval": "Scan libraries every (minutes)",
-      "scan_interval_help": "0 turns automatic scans off.",
       "stream_buffer": "Streaming buffer (seconds)",
       "stream_buffer_help": "How far ahead players load when streaming (10-600, default 30). More rides out network hiccups but uses more memory in the browser, which may cap it for high-bitrate files.",
       "hw_title": "Hardware transcoding",

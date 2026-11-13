@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
-import { demoLibraries } from "@/stories/fixtures";
-import { LibrariesPage, LibraryDialog } from "./Libraries";
+import { demoLibraries, demoSystemSettings } from "@/stories/fixtures";
+import { LibrariesPage, LibraryDialog, ScanScheduleCard } from "./Libraries";
 
 /** Admin > Libraries, and the dialog that adds a library or edits one. */
 const meta = {
@@ -18,6 +18,7 @@ const meta = {
     layout: "fullscreen",
     api: {
       "api/fs/folders": { path: "/media", parent: "/", folders: ["anime", "movies", "movies-4k", "tv"] },
+      "api/system/settings": demoSystemSettings,
     },
   },
 } satisfies Meta<typeof LibrariesPage>;
@@ -73,5 +74,33 @@ export const AddLibrary: StoryObj<typeof LibraryDialog> = {
     const c = within(canvasElement);
     await expect(c.getByLabelText("Type")).toBeEnabled();
     await expect(c.getByRole("button", { name: "Add and scan" })).toBeDisabled();
+  },
+};
+
+/** The last general-settings save the mocked server received. */
+let lastSettingsSave: unknown = null;
+
+export const ScanSchedule: StoryObj<typeof ScanScheduleCard> = {
+  render: () => <ScanScheduleCard />,
+  parameters: {
+    api: {
+      "api/system/settings": demoSystemSettings,
+      "PUT api/system/settings": ({ body }: { body: unknown }) => {
+        lastSettingsSave = body;
+        return body;
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    lastSettingsSave = null;
+    const c = within(canvasElement);
+    const interval = await c.findByLabelText("Scan libraries every (minutes)");
+    await expect(interval).toHaveValue(60);
+    await userEvent.clear(interval);
+    await userEvent.type(interval, "30");
+    await userEvent.click(c.getByRole("button", { name: "Save" }));
+    // The whole settings object is sent back, with only the interval changed.
+    await waitFor(() => expect(lastSettingsSave).toMatchObject({ ...demoSystemSettings, scan_interval_minutes: 30 }));
+    await expect(c.getByText("Saved.")).toBeVisible();
   },
 };

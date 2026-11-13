@@ -42,6 +42,11 @@ as the current truth, never as a history.
   and editing share one dialog; fields that can't change after creation stay
   visible but disabled, with a help line saying why.
   (`web/src/pages/admin/Libraries.tsx`)
+- A setting lives on the page for what it acts on, not on General: the
+  automatic-scan interval ("Scan schedule" card) moved from Settings to the
+  Libraries page, because it only concerns libraries. It still saves through
+  `PUT /api/system/settings` (the endpoint takes the whole object, so the
+  card echoes the loaded values back). (`web/src/pages/admin/Libraries.tsx`)
 
 ## Player UI
 

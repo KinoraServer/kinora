@@ -10,7 +10,7 @@ import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { parentFolder } from "@/lib/paths";
 import { useApi } from "@/lib/session";
-import type { Library } from "@/lib/types";
+import type { Library, SystemSettings } from "@/lib/types";
 
 export function LibrariesPage() {
   const { t } = useTranslation();
@@ -37,84 +37,136 @@ export function LibrariesPage() {
   };
 
   return (
-    <Card>
-      <CardHeader
-        title={t("admin.libraries.title")}
-        description={t("admin.libraries.help")}
-        action={
-          <Button onClick={() => setEditing("new")}>
-            <FolderPlus className="h-4 w-4" /> {t("admin.libraries.add")}
-          </Button>
-        }
-      />
-      <ErrorNote message={error} />
-      <div className="divide-y">
-        {data?.length === 0 && (
-          <div className="p-5">
-            <Empty title={t("admin.libraries.empty")}>{t("admin.libraries.empty_body")}</Empty>
-          </div>
-        )}
-        {data?.map((lib) => (
-          <div key={lib.id} className="flex flex-wrap items-center justify-between gap-4 p-5">
-            <div className="min-w-0 space-y-1">
-              <p className="flex items-center gap-2 font-medium">
-                {lib.name}{" "}
-                <Badge>{lib.kind === "tv" ? t("admin.libraries.kind_tv") : t("admin.libraries.kind_movies")}</Badge>
-              </p>
-              <p className="truncate font-mono text-xs text-muted-foreground">{lib.paths.join(", ")}</p>
-              <p className="text-sm text-muted-foreground">
-                {lib.scan?.running
-                  ? t("admin.libraries.scanning", { phase: lib.scan.phase }) +
-                    (lib.scan.total
-                      ? ` ${t("admin.libraries.scan_progress", { processed: lib.scan.processed, total: lib.scan.total })}`
-                      : "")
-                  : t("admin.libraries.stats", { count: lib.item_count, lastScan: formatDate(lib.last_scan_at) })}
-                {lib.scan &&
-                  !lib.scan.running &&
-                  lib.scan.errors > 0 &&
-                  t("admin.libraries.scan_errors", { count: lib.scan.errors })}
-              </p>
-              {lib.scan?.last_error && !lib.scan.running && (
-                <p className="text-xs text-destructive">{lib.scan.last_error}</p>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => scan(lib.id)} disabled={lib.scan?.running}>
-                <RefreshCw className={`h-4 w-4 ${lib.scan?.running ? "animate-spin" : ""}`} />{" "}
-                {t("admin.libraries.scan")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditing(lib)}
-                aria-label={t("admin.libraries.edit", { name: lib.name })}
-                title={t("admin.libraries.edit", { name: lib.name })}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => remove(lib)}
-                aria-label={t("admin.libraries.remove", { name: lib.name })}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {editing && (
-        <LibraryDialog
-          // A fresh form for each library opened.
-          key={editing === "new" ? "new" : editing.id}
-          library={editing === "new" ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            reload();
-          }}
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title={t("admin.libraries.title")}
+          description={t("admin.libraries.help")}
+          action={
+            <Button onClick={() => setEditing("new")}>
+              <FolderPlus className="h-4 w-4" /> {t("admin.libraries.add")}
+            </Button>
+          }
         />
+        <ErrorNote message={error} />
+        <div className="divide-y">
+          {data?.length === 0 && (
+            <div className="p-5">
+              <Empty title={t("admin.libraries.empty")}>{t("admin.libraries.empty_body")}</Empty>
+            </div>
+          )}
+          {data?.map((lib) => (
+            <div key={lib.id} className="flex flex-wrap items-center justify-between gap-4 p-5">
+              <div className="min-w-0 space-y-1">
+                <p className="flex items-center gap-2 font-medium">
+                  {lib.name}{" "}
+                  <Badge>{lib.kind === "tv" ? t("admin.libraries.kind_tv") : t("admin.libraries.kind_movies")}</Badge>
+                </p>
+                <p className="truncate font-mono text-xs text-muted-foreground">{lib.paths.join(", ")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {lib.scan?.running
+                    ? t("admin.libraries.scanning", { phase: lib.scan.phase }) +
+                      (lib.scan.total
+                        ? ` ${t("admin.libraries.scan_progress", { processed: lib.scan.processed, total: lib.scan.total })}`
+                        : "")
+                    : t("admin.libraries.stats", { count: lib.item_count, lastScan: formatDate(lib.last_scan_at) })}
+                  {lib.scan &&
+                    !lib.scan.running &&
+                    lib.scan.errors > 0 &&
+                    t("admin.libraries.scan_errors", { count: lib.scan.errors })}
+                </p>
+                {lib.scan?.last_error && !lib.scan.running && (
+                  <p className="text-xs text-destructive">{lib.scan.last_error}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={() => scan(lib.id)} disabled={lib.scan?.running}>
+                  <RefreshCw className={`h-4 w-4 ${lib.scan?.running ? "animate-spin" : ""}`} />{" "}
+                  {t("admin.libraries.scan")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditing(lib)}
+                  aria-label={t("admin.libraries.edit", { name: lib.name })}
+                  title={t("admin.libraries.edit", { name: lib.name })}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => remove(lib)}
+                  aria-label={t("admin.libraries.remove", { name: lib.name })}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {editing && (
+          <LibraryDialog
+            // A fresh form for each library opened.
+            key={editing === "new" ? "new" : editing.id}
+            library={editing === "new" ? null : editing}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              reload();
+            }}
+          />
+        )}
+      </Card>
+      <ScanScheduleCard />
+    </div>
+  );
+}
+
+/**
+ * How often Kinora rescans every library. The value lives in the general system
+ * settings, but it is edited here next to the libraries it applies to.
+ */
+export function ScanScheduleCard() {
+  const { t } = useTranslation();
+  const { data, error } = useApi<SystemSettings>("api/system/settings");
+  const [minutes, setMinutes] = useState<number | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data) setMinutes(data.scan_interval_minutes);
+  }, [data]);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!data || minutes === null) return;
+    setSaveError(null);
+    try {
+      // The endpoint takes the whole settings object, so echo back what we loaded.
+      await api.put("api/system/settings", { ...data, scan_interval_minutes: minutes });
+      setSaved(t("common.saved"));
+      setTimeout(() => setSaved(null), 2000);
+    } catch (err) {
+      setSaveError((err as Error).message);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader title={t("admin.libraries.scan_schedule")} description={t("admin.libraries.scan_schedule_help")} />
+      <ErrorNote message={error} />
+      {minutes !== null && (
+        <form onSubmit={save} className="grid gap-4 p-5 sm:grid-cols-2">
+          <Field label={t("admin.libraries.scan_interval")} help={t("admin.libraries.scan_interval_help")}>
+            <Input type="number" min={0} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+          </Field>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <Button type="submit">{t("common.save")}</Button>
+            {saved && <span className="text-sm text-muted-foreground">{saved}</span>}
+            <ErrorNote message={saveError} />
+          </div>
+        </form>
       )}
     </Card>
   );

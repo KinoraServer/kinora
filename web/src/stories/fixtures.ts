@@ -1,7 +1,7 @@
 // Made-up data for stories. Nothing here talks to a server.
 
 import type { PlayerInfo } from "@/lib/playback-stats";
-import type { ItemCard, Library, StreamInfo, SystemInfo, Theme, User } from "@/lib/types";
+import type { ItemCard, Library, StreamInfo, SystemInfo, SystemSettings, Theme, User } from "@/lib/types";
 
 /** The server's built-in themes (copied from crates/server/src/modules/themes.rs). */
 export const builtinThemes: Theme[] = [
@@ -161,6 +161,14 @@ export const demoSystemInfo: SystemInfo = {
 };
 
 export const demoUser: User = { id: "u1", username: "lan", role: "owner" };
+
+export const demoSystemSettings: SystemSettings = {
+  server_name: "Kinora",
+  default_theme: "kinora",
+  hw_accel: "auto",
+  scan_interval_minutes: 60,
+  stream_buffer_seconds: 30,
+};
 
 export const demoLibraries: Library[] = [
   {

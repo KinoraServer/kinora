@@ -19,6 +19,16 @@ export interface SystemInfo {
   skin_api?: { current: number; supported: number[] };
 }
 
+/** `GET /api/system/settings`: the whole object is read and written together. */
+export interface SystemSettings {
+  server_name: string;
+  default_theme: string;
+  hw_accel: string;
+  /** Minutes between automatic library scans; 0 disables. */
+  scan_interval_minutes: number;
+  stream_buffer_seconds: number;
+}
+
 export interface ItemCard {
   id: string;
   library_id: string;
