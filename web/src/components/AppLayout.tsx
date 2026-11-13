@@ -1,9 +1,10 @@
 import { Avatar } from "@/components/Avatar";
 import { Logo } from "@/components/Logo";
-import { Clapperboard, Home, LogOut, Search, Settings, Tv, UserCog } from "lucide-react";
+import { Bug, Clapperboard, Home, LogOut, Search, Settings, Tv, UserCog } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
+import { GITHUB_ISSUES_URL } from "@/lib/links";
 import { useApi, useSession } from "@/lib/session";
 import type { Library, User } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -113,6 +114,9 @@ export function UserMenu({ user, isAdmin, onLogout }: { user: User; isAdmin: boo
             </Link>
           )}
           <div className="my-1 border-t" />
+          <a href={GITHUB_ISSUES_URL} target="_blank" rel="noreferrer" className={item}>
+            <Bug className="h-4 w-4" /> {t("common.report_issue")}
+          </a>
           <button onClick={onLogout} className={item}>
             <LogOut className="h-4 w-4" /> {t("nav.sign_out")}
           </button>

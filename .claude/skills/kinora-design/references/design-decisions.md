@@ -42,6 +42,13 @@ as the current truth, never as a history.
   and editing share one dialog; fields that can't change after creation stay
   visible but disabled, with a help line saying why.
   (`web/src/pages/admin/Libraries.tsx`)
+- "Report an issue" (GitHub issues link) lives where a problem is being
+  chased, not on an About page: in the header account menu above Sign out,
+  and as a bug-icon-only link in the player info panel header, next to
+  Trace's "Copy all" — copy the trace, then file it. The URL is one constant
+  (`web/src/lib/links.ts`); external links open in a new tab and reuse the
+  surrounding item styles (account-menu row / player-chrome white-on-black).
+  (`AppLayout.tsx`, `MediaPlayer.tsx`)
 - A setting lives on the page for what it acts on, not on General: the
   automatic-scan interval ("Scan schedule" card) moved from Settings to the
   Libraries page, because it only concerns libraries. It still saves through

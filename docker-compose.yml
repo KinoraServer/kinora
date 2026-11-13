@@ -6,7 +6,7 @@
 #   3. docker compose up -d, then open http://<server-ip>:8420
 services:
   kinora:
-    image: ghcr.io/lancealthouse/kinora:latest
+    image: ghcr.io/kinoraserver/kinora:latest
     container_name: kinora
     ports:
       - "8420:8420"
