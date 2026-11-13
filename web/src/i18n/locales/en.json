@@ -13,7 +13,8 @@
     "yes": "yes",
     "no": "no",
     "none": "none",
-    "never": "never"
+    "never": "never",
+    "report_issue": "Report an issue"
   },
   "server": {
     "unreachable": "Can't reach the Kinora server."

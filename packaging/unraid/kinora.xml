@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>kinora</Name>
-  <Repository>ghcr.io/lancealthouse/kinora:latest</Repository>
-  <Registry>https://github.com/lancealthouse/kinora/pkgs/container/kinora</Registry>
+  <Repository>ghcr.io/kinoraserver/kinora:latest</Repository>
+  <Registry>https://github.com/KinoraServer/kinora/pkgs/container/kinora</Registry>
   <Network>bridge</Network>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/lancealthouse/kinora</Support>
-  <Project>https://github.com/lancealthouse/kinora</Project>
+  <Support>https://github.com/KinoraServer/kinora</Support>
+  <Project>https://github.com/KinoraServer/kinora</Project>
   <Overview>Kinora is a lightweight self-hosted media server: scans your movies and TV, fetches artwork from TMDB, and streams to any browser with hardware transcoding (Intel, AMD, NVIDIA). For NVIDIA, install the Nvidia Driver plugin and add --runtime=nvidia to Extra Parameters.</Overview>
-  <Icon>https://raw.githubusercontent.com/LanceAlthouse/kinora/main/packaging/unraid/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/KinoraServer/kinora/main/packaging/unraid/icon.png</Icon>
   <Category>MediaServer:Video</Category>
   <WebUI>http://[IP]:[PORT:8420]/</WebUI>
   <ExtraParams/>

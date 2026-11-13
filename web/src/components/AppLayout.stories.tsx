@@ -50,6 +50,7 @@ export const AccountMenu: Story = {
     await userEvent.click(await c.findByRole("button", { name: "Account menu" }));
     await expect(c.getByRole("link", { name: /User Settings/ })).toBeVisible();
     await expect(c.getByRole("link", { name: /Admin Settings/ })).toBeVisible();
+    await expect(c.getByRole("link", { name: /Report an issue/ })).toBeVisible();
     await expect(c.getByRole("button", { name: /Sign out/ })).toBeVisible();
     await expect(c.queryByText("Theme")).not.toBeInTheDocument();
   },

@@ -21,7 +21,7 @@ docker run -d --name kinora -p 8420:8420 \
   -v /path/to/config:/config \
   -v /path/to/media:/media:ro \
   --device /dev/dri:/dev/dri \
-  ghcr.io/lancealthouse/kinora:latest
+  ghcr.io/kinoraserver/kinora:latest
 ```
 
 Then open `http://<server-ip>:8420`, create your account, and add a library

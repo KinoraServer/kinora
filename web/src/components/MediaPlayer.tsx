@@ -21,6 +21,7 @@ import {
   AppWindow,
   ArrowLeft,
   AudioLines,
+  Bug,
   Captions,
   ChevronDown,
   ChevronUp,
@@ -68,6 +69,7 @@ import {
   saveSubtitleOffset,
 } from "@/lib/subtitles";
 import { Spinner } from "@/components/ui/card";
+import { GITHUB_ISSUES_URL } from "@/lib/links";
 import { i18n } from "@/i18n";
 import { formatClock } from "@/lib/format";
 import { useApi } from "@/lib/session";
@@ -922,6 +924,15 @@ function InfoPanel({ c }: { c: Ctx }) {
             {copied ? t("player.copied") : t("player.copy_all")}
           </button>
         )}
+        <a
+          href={GITHUB_ISSUES_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t("common.report_issue")}
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-white/70 hover:bg-white/15 hover:text-white"
+        >
+          <Bug className="h-4 w-4" />
+        </a>
         <button
           type="button"
           aria-label={t("player.close_info")}

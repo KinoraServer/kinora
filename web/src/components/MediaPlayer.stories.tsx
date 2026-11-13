@@ -183,6 +183,7 @@ export const InfoPanelTrace: Story = {
     await userEvent.click(s.getByRole("tab", { name: "Trace" }));
     await expect(s.getByText("Recent segments")).toBeVisible();
     await expect(s.getByRole("button", { name: "Copy all" })).toBeVisible();
+    await expect(s.getByRole("link", { name: "Report an issue" })).toBeVisible();
     await userEvent.click(s.getByRole("button", { name: "Close playback info" }));
     await expect(s.queryByRole("dialog", { name: "Playback info" })).toBeNull();
   },
