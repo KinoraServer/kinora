@@ -250,7 +250,10 @@ async fn direct(
     state.now_playing.touch_file(&user.id, &file_id);
     let path: String =
         sqlx::query_scalar("SELECT path FROM media_files WHERE id = ?").bind(&file_id).fetch_one(&state.db).await?;
-    let resp = ServeFile::new(&path).oneshot(request).await.map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+    let resp = match ServeFile::new(&path).oneshot(request).await {
+        Ok(resp) => resp,
+        Err(e) => match e {},
+    };
     Ok(resp.map(Body::new).into_response())
 }
 
